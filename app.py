@@ -206,7 +206,7 @@ if st.button("🚀 Generar Reporte Médico en PDF", type="primary"):
                 """
 
         response = client.models.generate_content(
-            model="gemini-2.5-flash", contents=prompt_maestro
+            model="gemini-3.8-flash", contents=prompt_maestro
         )
         texto_generado = response.text
 
