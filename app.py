@@ -261,7 +261,7 @@ if st.button("🚀 Generar Reporte Médico en PDF", type="primary"):
                 """
 
         # Modelos con respaldo
-        modelos = ["gemini-2.5-flash", "gemini-1.5-flash"]
+        modelos = ["gemini-3.8-flash", "gemini-1.5-flash"]
         texto_generado = None
 
         for mod in modelos:
