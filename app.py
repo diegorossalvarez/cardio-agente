@@ -35,7 +35,7 @@ def extraer_texto_pdf(file_bytes) -> str:
     return sanitizar_mediciones_chison(texto_completo)
 
 
-# PROMPT MAESTRO CON EJEMPLO REAL DE TU PRÁCTICA (GOLD STANDARD)
+# PROMPT MAESTRO CON EJEMPLO REAL DE SU PRÁCTICA (GOLD STANDARD)
 PROMPT_GOLD_STANDARD = """
 Eres un asistente médico inteligente especializado en ecocardiografía que redacta reportes con el nivel clínico, rigor y estilo exacto del Dr. Diego Ross Álvarez.
 
@@ -92,34 +92,41 @@ uploaded_file = st.file_uploader(
     "Cargar PDF de mediciones del ecógrafo", type=["pdf"]
 )
 
-if uploaded_file and api_key:
-    if st.button("Generar Reporte Clínico Estándar Ross"):
-        with st.spinner("Procesando y limpiando datos con Python y Gemini..."):
-            try:
-                # Paso 1: Extracción y normalización con Python
-                datos_crudos = extraer_texto_pdf(uploaded_file.read())
+# Procesamiento automático o manual visible
+if uploaded_file:
+    st.success(f"Archivo cargado correctamente: {uploaded_file.name}")
 
-                # Paso 2: Invocación de la API de Gemini
-                client = genai.Client(api_key=api_key)
-                response = client.models.generate_content(
-                    model="gemini-2.5-flash",
-                    contents=[
-                        PROMPT_GOLD_STANDARD,
-                        f"DATOS CRUDOS DEL NUEVO ESTUDIO:\n{datos_crudos}",
-                    ],
-                )
+    if not api_key:
+        st.warning(
+            "Por favor, ingrese su Gemini API Key en el panel lateral izquierdo para continuar."
+        )
+    else:
+        if st.button("🚀 Generar Reporte Clínico"):
+            with st.spinner(
+                "Procesando mediciones y aplicando plantilla clínica..."
+            ):
+                try:
+                    # Paso 1: Extracción y normalización con Python
+                    datos_crudos = extraer_texto_pdf(uploaded_file.read())
 
-                st.subheader("Reporte Clínico Generado")
-                st.markdown(response.text)
+                    # Paso 2: Invocación de la API de Gemini
+                    client = genai.Client(api_key=api_key)
+                    response = client.models.generate_content(
+                        model="gemini-2.5-flash",
+                        contents=[
+                            PROMPT_GOLD_STANDARD,
+                            f"DATOS CRUDOS DEL NUEVO ESTUDIO:\n{datos_crudos}",
+                        ],
+                    )
 
-                st.download_button(
-                    "Descargar Reporte (.txt)",
-                    response.text,
-                    file_name="Reporte_Ecocardiograma_Ross.txt",
-                )
+                    st.subheader("Reporte Clínico Generado")
+                    st.markdown(response.text)
 
-            except Exception as e:
-                st.error(f"Error en el procesamiento: {str(e)}")
+                    st.download_button(
+                        "Descargar Reporte (.txt)",
+                        response.text,
+                        file_name="Reporte_Ecocardiograma_Ross.txt",
+                    )
 
-elif not api_key:
-    st.info("Por favor, ingrese su Gemini API Key en el panel lateral.")
+                except Exception as e:
+                    st.error(f"Error al generar el reporte: {str(e)}")
