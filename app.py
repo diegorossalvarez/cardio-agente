@@ -89,9 +89,15 @@ AHORA, PROCESA LOS SIGUIENTES DATOS CRUDOS DEL NUEVO ESTUDIO BAJO ESTE MISMO EST
 
 # Interfaz para cargar el PDF del ecógrafo
 uploaded_file = st.file_uploader(
-    "Cargar PDF de mediciones del ecógrafo", type=["pdf"]
+    "Cargar archivo",
+    type=None
 )
 
+if uploaded_file is not None:
+    st.write("ARCHIVO RECIBIDO")
+    st.write(uploaded_file.name)
+    st.write(uploaded_file.type)
+    st.write(uploaded_file.size)
 # Procesamiento automático o manual visible
 if uploaded_file:
     st.success(f"Archivo cargado correctamente: {uploaded_file.name}")
