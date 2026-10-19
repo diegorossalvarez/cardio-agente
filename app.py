@@ -1,6 +1,7 @@
 import io
 import numpy as np
 from google import genai
+from google.genai import types
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -172,21 +173,42 @@ def generar_pdf_compacto(titulo_estudio, texto_reporte):
   return buffer
 
 
-dictado = st.text_area(
-    "Pega el texto del ecógrafo o dicta el estudio:",
-    height=240,
-    placeholder="Pega aquí la tabla del ecógrafo o el dictado de voz...",
+# Opciones de entrada de datos
+opcion_entrada = st.radio(
+    "Selecciona el método para ingresar los datos del estudio:",
+    ["📄 Subir PDF del ecógrafo", "✍️ Pegar texto / Dictado de voz"],
+    horizontal=True,
 )
+
+pdf_file = None
+dictado = ""
+
+if opcion_entrada == "📄 Subir PDF del ecógrafo":
+  pdf_file = st.file_uploader(
+      "Carga el PDF con las mediciones o reporte del equipo:",
+      type=["pdf"],
+      help="Sube el archivo PDF generado por el ecógrafo (Chison, Vinno, etc.)",
+  )
+else:
+  dictado = st.text_area(
+      "Pega el texto del ecógrafo o dicta el estudio:",
+      height=200,
+      placeholder="Pega aquí la tabla del ecógrafo o el dictado de voz...",
+  )
 
 if st.button("🚀 Generar Reporte Médico en PDF", type="primary"):
   if not api_key:
     st.error(
         "Por favor ingresa tu Gemini API Key en la barra lateral izquierda."
     )
-  elif not dictado.strip():
-    st.warning("Ingresa los datos o el dictado del estudio.")
+  elif opcion_entrada == "📄 Subir PDF del ecógrafo" and pdf_file is None:
+    st.warning("Por favor selecciona y sube un archivo PDF.")
+  elif (
+      opcion_entrada == "✍️ Pegar texto / Dictado de voz" and not dictado.strip()
+  ):
+    st.warning("Por favor ingresa el texto o dictado del estudio.")
   else:
-    with st.spinner("Procesando reporte con reglas estrictas..."):
+    with st.spinner("Procesando estudio y aplicando reglas estrictas..."):
       try:
         client = genai.Client(api_key=api_key)
 
@@ -196,12 +218,12 @@ if st.button("🚀 Generar Reporte Médico en PDF", type="primary"):
 
                 REGLAS ESTRICTAS E INQUEBRANTABLES:
                 1. FIDELIDAD ABSOLUTA Y CERO INVENTOS:
-                   - Extrae ÚNICAMENTE los datos explícitos de la fuente.
+                   - Extrae ÚNICAMENTE los datos explícitos de la fuente (ya sea texto o tablas dentro del PDF).
                    - PROHIBIDO mezclar parámetros o asignar valores de un ventrículo a otro.
-                   - Si un dato no viene, omítelo. Sin comentarios ni adjetivos dramáticos ("marcadas alteraciones", "asustar", etc.). Rigor seco y clínico.
+                   - Si un dato no viene en el archivo o texto, omítelo. Sin comentarios ni adjetivos dramáticos ("marcadas alteraciones", "asustar", etc.). Rigor seco y clínico.
 
                 2. NORMALIZACIÓN DE VELOCIDADES Y SIGNOS:
-                   - Las velocidades tisulares (e', Sa) deben reportarse en **cm/s** con valor estrictamente POSITIVO (PROHIBIDO usar signos negativos como -6.59, reportar "e' septal 6.59 cm/s").
+                   - Las velocidades tisulares (e', Sa) deben reportarse en **cm/s** con valor strictly POSITIVO (PROHIBIDO usar signos negativos como -6.59, reportar "e' septal 6.59 cm/s").
                    - Flujos continuos (IT, Vmáx) en **m/s**. Dimensiones lineales en **mm**.
                    - AccT / TAcp del TSVD en segundos (s).
 
@@ -221,17 +243,25 @@ if st.button("🚀 Generar Reporte Médico en PDF", type="primary"):
                      6. Análisis valvular ("Sin valvulopatía significativa" en aórtica/mitral si aplica, índice Doppler si está presente, y grado de insuficiencia tricúspide).
                      7. Probabilidad de hipertensión pulmonar (categoría directa como "Probabilidad baja", sin citar "guías ASE" ni repetir la cifra de PSAP).
                      8. Diagnóstico integrativo preciso y profesional (ej. Cardiopatía de probable origen isquémico con zonas de infarto antiguo, disfunción sistólica global severa del VI, hipertrofia excéntrica y presiones de llenado limítrofes).
-
-                TEXTO O DATOS DEL ESTUDIO:
-                {dictado}
                 """
 
+        # Preparar los contenidos para Gemini segun el metodo de entrada
+        contents_input = [prompt_maestro]
+
+        if opcion_entrada == "📄 Subir PDF del ecógrafo" and pdf_file is not None:
+          pdf_bytes = pdf_file.read()
+          contents_input.append(
+              types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf")
+          )
+        else:
+          contents_input.append(f"\nTEXTO O DATOS DEL ESTUDIO:\n{dictado}")
+
         response = client.models.generate_content(
-            model="gemini-3.8-flash", contents=prompt_maestro
+            model="gemini-3.8-flash", contents=contents_input
         )
         texto_generado = response.text
 
-        pdf_bytes = generar_pdf_compacto(tipo_estudio, texto_generado)
+        pdf_resultado_bytes = generar_pdf_compacto(tipo_estudio, texto_generado)
 
         st.success("¡Reporte generado con éxito!")
 
@@ -239,7 +269,7 @@ if st.button("🚀 Generar Reporte Médico en PDF", type="primary"):
         with col1:
           st.download_button(
               label="📥 Descargar PDF Impresión / WhatsApp",
-              data=pdf_bytes,
+              data=pdf_resultado_bytes,
               file_name=f"Reporte_{tipo_estudio.replace(' ', '_')}.pdf",
               mime="application/pdf",
               use_container_width=True,
@@ -249,4 +279,4 @@ if st.button("🚀 Generar Reporte Médico en PDF", type="primary"):
             st.write(texto_generado)
 
       except Exception as e:
-        st.error(f"Error al procesar: {e}")
+        st.error(f"Error al procesar el archivo o texto: {e}")
