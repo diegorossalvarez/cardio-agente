@@ -1,4 +1,5 @@
 import io
+import numpy as np
 from google import genai
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
@@ -15,8 +16,8 @@ st.set_page_config(
 
 st.title("🫀 CardioAgente: Reportes Clínicos Especializados")
 st.markdown(
-    "Generación automática de reportes e interpretación de **Ecocardiograma (9"
-    " secciones)**, **Holter 24h** y **Pruebas Autonómicas**."
+    "Generación automática de reportes de **Ecocardiograma**, **Holter** y"
+    " **Pruebas Autonómicas** en formato compacto de alto rendimiento."
 )
 
 # Sidebar
@@ -27,66 +28,76 @@ st.sidebar.header("📋 Estudio")
 tipo_estudio = st.sidebar.selectbox(
     "Selecciona el tipo de estudio:",
     [
-        "Ecocardiograma Transtorácico (9 Secciones)",
+        "Ecocardiograma Transtorácico (Formato Compacto Estricto)",
         "Holter de 24 Horas",
         "Pruebas Autonómicas (Valsalva / Ortostatismo / Respiración)",
     ],
 )
 
 
-# Función para generar el PDF con ReportLab
-def generar_pdf_clinico(titulo_estudio, texto_reporte):
+# Función auxiliar para cálculo de Qp/Qs
+def calcular_qp_qs(diam_tsvd_mm, itv_tsvd_cm, diam_tsvi_mm, itv_tsvi_cm):
+  try:
+    r_vd = (diam_tsvd_mm / 10.0) / 2.0
+    r_vi = (diam_tsvi_mm / 10.0) / 2.0
+    area_vd = np.pi * (r_vd**2)
+    area_vi = np.pi * (r_vi**2)
+    sv_vd = area_vd * itv_tsvd_cm
+    sv_vi = area_vi * itv_tsvi_cm
+    qp_qs = sv_vd / sv_vi
+    return round(qp_qs, 2)
+  except Exception:
+    return None
+
+
+# Generación de PDF Compacto con ReportLab
+def generar_pdf_compacto(titulo_estudio, texto_reporte):
   buffer = io.BytesIO()
   doc = SimpleDocTemplate(
       buffer,
       pagesize=letter,
-      rightMargin=36,
-      leftMargin=36,
-      topMargin=36,
-      bottomMargin=36,
+      rightMargin=28,
+      leftMargin=28,
+      topMargin=28,
+      bottomMargin=28,
   )
   story = []
   styles = getSampleStyleSheet()
 
-  # Estilos personalizados
   estilo_encabezado_nombre = ParagraphStyle(
       "EncabezadoNombre",
       parent=styles["Normal"],
       fontName="Helvetica-Bold",
-      fontSize=14,
+      fontSize=13,
       textColor=colors.HexColor("#1A365D"),
-      leading=16,
+      leading=15,
   )
-
   estilo_encabezado_sub = ParagraphStyle(
       "EncabezadoSub",
       parent=styles["Normal"],
       fontName="Helvetica",
-      fontSize=9,
+      fontSize=8.5,
       textColor=colors.HexColor("#2B6CB0"),
-      leading=12,
+      leading=11,
   )
-
   estilo_contacto = ParagraphStyle(
       "EncabezadoContacto",
       parent=styles["Normal"],
       fontName="Helvetica",
       fontSize=8,
       textColor=colors.HexColor("#4A5568"),
-      alignment=2,  # Derecha
-      leading=11,
+      alignment=2,
+      leading=10,
   )
 
-  # Tabla de Membrete
-  col_izquierda = [
+  col_izq = [
       Paragraph("DR. DIEGO ROSS ÁLVAREZ", estilo_encabezado_nombre),
       Paragraph(
           "Cardiólogo - Electrofisiólogo | Especialidad UNAM 12883155",
           estilo_encabezado_sub,
       ),
   ]
-
-  col_derecha = [
+  col_der = [
       Paragraph("<b>WhatsApp:</b> 9812438407", estilo_contacto),
       Paragraph(
           "<b>Consultorio:</b> Zenzontle 110, Fracc. La Ceiba", estilo_contacto
@@ -94,7 +105,7 @@ def generar_pdf_clinico(titulo_estudio, texto_reporte):
       Paragraph("Villahermosa, Tabasco | CP 86127", estilo_contacto),
   ]
 
-  tabla_membrete = Table([[col_izquierda, col_derecha]], colWidths=[4.2 * inch, 3.2 * inch])
+  tabla_membrete = Table([[col_izq, col_der]], colWidths=[4.2 * inch, 3.4 * inch])
   tabla_membrete.setStyle(
       TableStyle([
           ("VALIGN", (0, 0), (-1, -1), "TOP"),
@@ -102,59 +113,56 @@ def generar_pdf_clinico(titulo_estudio, texto_reporte):
       ])
   )
   story.append(tabla_membrete)
+  story.append(Spacer(1, 4))
 
-  # Línea divisoria azul
-  story.append(Spacer(1, 6))
-  tabla_linea = Table([[""]], colWidths=[7.4 * inch])
+  tabla_linea = Table([[""]], colWidths=[7.6 * inch])
   tabla_linea.setStyle(
-      TableStyle([
-          ("LINEABOVE", (0, 0), (-1, -1), 1.5, colors.HexColor("#1A365D")),
-      ])
+      TableStyle(
+          [("LINEABOVE", (0, 0), (-1, -1), 1.2, colors.HexColor("#1A365D"))]
+      )
   )
   story.append(tabla_linea)
-  story.append(Spacer(1, 10))
+  story.append(Spacer(1, 6))
 
-  # Título del Estudio
-  estilo_titulo_estudio = ParagraphStyle(
+  estilo_titulo = ParagraphStyle(
       "TituloEstudio",
       parent=styles["Heading2"],
       fontName="Helvetica-Bold",
-      fontSize=12,
+      fontSize=11,
       textColor=colors.HexColor("#2C5282"),
-      alignment=1,  # Centrado
-      spaceAfter=12,
+      alignment=1,
+      spaceAfter=8,
   )
-  story.append(Paragraph(titulo_estudio.upper(), estilo_titulo_estudio))
+  story.append(Paragraph(titulo_estudio.upper(), estilo_titulo))
 
-  # Cuerpo del Reporte
   estilo_cuerpo = ParagraphStyle(
-      "CuerpoReporte",
+      "CuerpoCompacto",
       parent=styles["Normal"],
       fontName="Helvetica",
-      fontSize=9.5,
+      fontSize=8.5,
       textColor=colors.HexColor("#1A202C"),
-      leading=14,
-      spaceAfter=6,
+      leading=11.5,
+      spaceAfter=4,
+  )
+  estilo_seccion = ParagraphStyle(
+      "SeccionHeader",
+      parent=estilo_cuerpo,
+      fontName="Helvetica-Bold",
+      textColor=colors.HexColor("#1A365D"),
+      fontSize=9.5,
+      spaceBefore=6,
+      spaceAfter=2,
   )
 
-  # Procesar párrafos
   lineas = texto_reporte.split("\n")
   for linea in lineas:
     linea_limpia = linea.strip().replace("*", "").replace("#", "")
     if linea_limpia:
       if (
-          linea_limpia.isupper()
-          or "SECCIÓN" in linea_limpia
+          "SECCIÓN" in linea_limpia
           or "CONCLUSIÓN" in linea_limpia
+          or linea_limpia.isupper()
       ):
-        estilo_seccion = ParagraphStyle(
-            "SeccionHeader",
-            parent=estilo_cuerpo,
-            fontName="Helvetica-Bold",
-            textColor=colors.HexColor("#1A365D"),
-            fontSize=10,
-            spaceBefore=8,
-        )
         story.append(Paragraph(linea_limpia, estilo_seccion))
       else:
         story.append(Paragraph(linea_limpia, estilo_cuerpo))
@@ -164,15 +172,10 @@ def generar_pdf_clinico(titulo_estudio, texto_reporte):
   return buffer
 
 
-# Interfaz de Usuario
 dictado = st.text_area(
-    "Pega o dicta la información del estudio:",
-    height=220,
-    placeholder=(
-        "Ejemplo para Eco: VTDVI 110 ml, VTSVI 40 ml, FEVI 60%, E 85 cm/s, A 60"
-        " cm/s, e' septal 9 cm/s, IT con velocidad 2.8 m/s, VCI 1.8 cm con"
-        " colapso >50%..."
-    ),
+    "Pega el texto del ecógrafo o dicta el estudio:",
+    height=240,
+    placeholder="Pega aquí la tabla del ecógrafo o el dictado de voz...",
 )
 
 if st.button("🚀 Generar Reporte Médico en PDF", type="primary"):
@@ -183,25 +186,43 @@ if st.button("🚀 Generar Reporte Médico en PDF", type="primary"):
   elif not dictado.strip():
     st.warning("Ingresa los datos o el dictado del estudio.")
   else:
-    with st.spinner("Procesando datos con IA y maquetando PDF..."):
+    with st.spinner("Procesando reporte con reglas estrictas..."):
       try:
         client = genai.Client(api_key=api_key)
 
         prompt_maestro = f"""
                 Eres un asistente experto en cardiología para el Dr. Diego Ross Álvarez.
-                Procesa la siguiente información de un {tipo_estudio}.
+                Procesa la información del siguiente {tipo_estudio}.
 
-                REGLAS ESTRICTAS PARA ECOCARDIOGRAMA:
-                1. Organiza la información obligatoriamente en 9 secciones.
-                2. Unidades de Doppler: Flujo continuo (ej. IT) en m/s. Flujo pulsado (ej. onda E, A, e') en cm/s. Sin duplicar unidades ni mezclar nomenclaturas.
-                3. Calcula PSAP sumando el gradiente por IT + PAD (estimada por VCI).
-                4. Incluye la conclusión en 8 puntos claros y jerarquizados.
-                5. Genera texto plano limpio, sin marcas de markdown (*, #, **).
+                REGLAS ESTRICTAS E INQUEBRANTABLES:
+                1. FIDELIDAD ABSOLUTA Y CERO INVENTOS:
+                   - Extrae ÚNICAMENTE los datos explícitos de la fuente.
+                   - PROHIBIDO mezclar parámetros o asignar valores de un ventrículo a otro.
+                   - Si un dato no viene, omítelo. Sin comentarios ni adjetivos dramáticos ("marcadas alteraciones", "asustar", etc.). Rigor seco y clínico.
 
-                REGLAS PARA HOLTER Y PRUEBAS AUTONÓMICAS:
-                - Presenta la interpretación clínica estandarizada (Valsalva, ortostatismo 30:15, respuesta respiratoria).
+                2. NORMALIZACIÓN DE VELOCIDADES Y SIGNOS:
+                   - Las velocidades tisulares (e', Sa) deben reportarse en **cm/s** con valor estrictamente POSITIVO (PROHIBIDO usar signos negativos como -6.59, reportar "e' septal 6.59 cm/s").
+                   - Flujos continuos (IT, Vmáx) en **m/s**. Dimensiones lineales en **mm**.
+                   - AccT / TAcp del TSVD en segundos (s).
 
-                DATOS DEL ESTUDIO:
+                3. CONDICIONAL DE Qp/Qs (CORTOCIRCUITOS / SHUNTS):
+                   - SOLO calcula y reporta la relación Qp/Qs si existe un CORTOCIRCUITO o SHUNT intracardíaco/extracardíaco explícito con flujo aumentado (ej. CIA, CIV, PCA, ventana aortopulmonar, drenaje venoso anómalo).
+                   - NO calcules ni reportes Qp/Qs en valvulopatías aisladas (incluyendo válvula aórtica bicúspide sin shunt), cardiopatía isquémica, hipertensiva o miocardiopatías.
+
+                4. ESTRUCTURA DE 9 SECCIONES Y CONCLUSIÓN DE 8 PUNTOS:
+                   - Sección 4: Incluir Onda E (cm/s), Onda A (cm/s), E/A, e' septal/lateral positivos (cm/s), E/e' septal/lateral y movilidad descrita objetivamente.
+                   - Sección 7: Incluir AccT pulmonar (s) y PSAP estimada calculada como Gradiente IT + PAD.
+                   - Conclusión Obligatoria (8 puntos):
+                     1. Geometría VI con IMVI y RWT explícitos entre paréntesis (ej. Hipertrofia excéntrica [IMVI 135.8 g/m² y RWT 0.39]).
+                     2. Tamaño de cavidades indicando medidas clave que justifican la dilatación (ej. Dilatación moderada de aurícula izquierda [diámetro AP 46.3 mm] y ventrículo izquierdo [diámetro diastólico 55.3 mm]).
+                     3. Función sistólica biventricular separada: VI por Simpson (ej. Disfunción sistólica global severa con FEVI por Simpson de 23.59%) y VD por TAPSE (ej. Disfunción sistólica longitudinal con TAPSE de 16.2 mm). NO inventes función radial/strain/3D si no se mide.
+                     4. Función diastólica con valores explícitos de E/e' y estado de presiones de llenado (ej. Relajación alterada con relación E/e' septal de 12.70 y lateral de 10.59, indicando presiones de llenado limítrofes).
+                     5. Movilidad descrita objetivamente sin dramatismos ni adjetivos subjetivos.
+                     6. Análisis valvular ("Sin valvulopatía significativa" en aórtica/mitral si aplica, índice Doppler si está presente, y grado de insuficiencia tricúspide).
+                     7. Probabilidad de hipertensión pulmonar (categoría directa como "Probabilidad baja", sin citar "guías ASE" ni repetir la cifra de PSAP).
+                     8. Diagnóstico integrativo preciso y profesional (ej. Cardiopatía de probable origen isquémico con zonas de infarto antiguo, disfunción sistólica global severa del VI, hipertrofia excéntrica y presiones de llenado limítrofes).
+
+                TEXTO O DATOS DEL ESTUDIO:
                 {dictado}
                 """
 
@@ -210,22 +231,21 @@ if st.button("🚀 Generar Reporte Médico en PDF", type="primary"):
         )
         texto_generado = response.text
 
-        # Generar PDF
-        pdf_bytes = generar_pdf_clinico(tipo_estudio, texto_generado)
+        pdf_bytes = generar_pdf_compacto(tipo_estudio, texto_generado)
 
-        st.success("¡Reporte generado e imprimible con éxito!")
+        st.success("¡Reporte generado con éxito!")
 
         col1, col2 = st.columns(2)
         with col1:
           st.download_button(
-              label="📥 Descargar PDF para Imprimir / WhatsApp",
+              label="📥 Descargar PDF Impresión / WhatsApp",
               data=pdf_bytes,
               file_name=f"Reporte_{tipo_estudio.replace(' ', '_')}.pdf",
               mime="application/pdf",
               use_container_width=True,
           )
         with col2:
-          with st.expander("👁️ Ver texto extraído"):
+          with st.expander("👁️ Ver texto procesado"):
             st.write(texto_generado)
 
       except Exception as e:
