@@ -118,7 +118,7 @@ if uploaded_file:
                     # Paso 2: Invocación de la API de Gemini
                     client = genai.Client(api_key=api_key)
                     response = client.models.generate_content(
-                        model="gemini-2.5-flash",
+                        model="gemini-3.8-flash",
                         contents=[
                             PROMPT_GOLD_STANDARD,
                             f"DATOS CRUDOS DEL NUEVO ESTUDIO:\n{datos_crudos}",
