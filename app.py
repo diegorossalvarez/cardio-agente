@@ -165,7 +165,7 @@ if uploaded_file is not None:
                     except Exception:
                         # Fallback automático a gemini-2.5-flash o alternativo si se satura
                         response = client.models.generate_content(
-                            model="gemini-2.5-flash",
+                            model="gemini-3.8-flash",
                             contents=[
                                 PROMPT_MEDICO_BLINDADO,
                                 f"DATOS CRUDOS EXTRAÍDOS DEL PDF:\n{datos_crudos}",
