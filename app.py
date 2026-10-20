@@ -20,7 +20,7 @@ api_key = st.sidebar.text_input("Gemini API Key", type="password")
 
 
 def extraer_texto_pdf(file_bytes) -> str:
-    """Extrae el texto completo del PDF extraído de la consola Chison sin alteración por Regex."""
+    """Extrae el texto completo del PDF de la consola Chison limpiamente."""
     texto_completo = ""
     with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
         for pagina in pdf.pages:
@@ -30,25 +30,27 @@ def extraer_texto_pdf(file_bytes) -> str:
     return texto_completo
 
 
-# PROMPT ESTRUCTURAL Y CLÍNICO ROBUSTO
-PROMPT_MEDICO = """
-Eres un asistente médico especializado en ecocardiografía que redacta reportes clínicos para el Dr. Diego Ross Álvarez.
+# PROMPT MÉDICO CLINICAMENTE BLINDADO (CERO ALUCINACIONES)
+PROMPT_MEDICO_BLINDADO = """
+Eres un asistente médico especializado en ecocardiografía estricta que redacta reportes clínicos para el Dr. Diego Ross Álvarez.
 
-MISION:
+MISIÓN:
 Analizar las mediciones ecocardiográficas extraídas de la consola de ultrasonido y generar un informe bien estructurado, ordenado y clínicamente preciso.
 
-REGLAS CLINICAS STRICTAS:
-1. VALORES NUMÉRICOS: Interpreta las velocidades, gradientes y tiempos como valores absolutos si provienen de inversiones del espectro Doppler (p. ej. THP o AVM con signo negativo).
-2. FIDELIDAD DE DATOS: Utiliza EXCLUSIVAMENTE las mediciones presentes en el texto recibido. Si un valor no existe (p. ej. FACVD, strain, o un gradiente específico), NO asumas ni inventes hallazgos o diagnósticos sobre esa cavidad o válvula.
+REGLAS CLÍNICAS ESTRICTAS DE CERO SUPOSICIÓN:
+1. VALORES ABSOLUTOS: Interpreta velocidades, gradientes y tiempos como valores absolutos si provienen de inversiones del espectro Doppler.
+2. FIDELIDAD ABSOLUTA DE DATOS (CRÍTICO): Utiliza EXCLUSIVAMENTE las mediciones presentes en el texto recibido. 
+   - PROHIBIDO emitir juicios cualitativos sobre el Ventrículo Derecho (ej. decir "función sistólica del VD disminuida o deprimida") a menos que poseas el valor cuantitativo explícito en el texto (como FACVD o onda s' tisular). Si solo tienes TAPSE, reporta únicamente el valor del TAPSE sin calificar globalmente la función del VD si no hay sustento matemático.
+   - Si un parámetro no existe en los datos crudos, omítelo por completo; nunca asumas ni inventes hallazgos.
 3. ESTRUCTURA DEL INFORME:
-   Organiza el reporte obligatoriamente en las siguientes secciones separadas claramente por saltos de línea:
+   Organiza el reporte obligatoriamente en las siguientes secciones separadas por saltos de línea:
    - DATOS DEL PACIENTE (Nombre, Edad, ASC)
    - ECOCARDIOGRAMA TRANSTORÁCICO (Texto descriptivo ordenado por cavidades: Aurícula Izquierda, Aurícula Derecha, Ventrículo Izquierdo, Ventrículo Derecho, Válvulas Mitral/Aórtica/Tricúspide/Pulmonar, Pericardio y Cava Inferior).
    - CONCLUSIONES (Puntos numerados objetivos basados estrictamente en las mediciones).
    - DIAGNÓSTICO INTEGRATIVO.
 
 ESTILO Y FIRMA:
-Al final del informe incluye la firma institucional:
+Al final del informe incluye obligatoriamente la firma institucional:
 DR ROSS ALVAREZ DIEGO
 Cardiólogo Clínico | Cédula 12883155 | Avalado por la UNAM
 Electrofisiólogo egresado CMN 20 de Noviembre
@@ -139,41 +141,54 @@ if uploaded_file is not None:
         st.warning("Por favor, ingrese su Gemini API Key en el panel lateral.")
     else:
         if st.button("🚀 Generar Borrador con IA"):
-            with st.spinner("Procesando mediciones y aplicando plantilla..."):
+            with st.spinner("Procesando mediciones y aplicando filtros clínicos..."):
                 try:
                     datos_crudos = extraer_texto_pdf(uploaded_file.read())
                     client = genai.Client(api_key=api_key)
 
-                    # Configuración estricta de temperatura
+                    # Configuración estricta de temperatura (Cero creatividad, total apego a datos)
                     config_gen = types.GenerateContentConfig(
                         temperature=0.0
                     )
 
-                    response = client.models.generate_content(
-                        model="gemini-3.8-flash",
-                        contents=[
-                            PROMPT_MEDICO,
-                            f"DATOS CRUDOS EXTRAÍDOS DEL PDF:\n{datos_crudos}",
-                        ],
-                        config=config_gen,
-                    )
+                    # Llamada con fallback automático entre modelos flash para máxima robustez
+                    response = None
+                    try:
+                        response = client.models.generate_content(
+                            model="gemini-3.8-flash",
+                            contents=[
+                                PROMPT_MEDICO_BLINDADO,
+                                f"DATOS CRUDOS EXTRAÍDOS DEL PDF:\n{datos_crudos}",
+                            ],
+                            config=config_gen,
+                        )
+                    except Exception:
+                        # Fallback automático a gemini-2.5-flash o alternativo si se satura
+                        response = client.models.generate_content(
+                            model="gemini-2.5-flash",
+                            contents=[
+                                PROMPT_MEDICO_BLINDADO,
+                                f"DATOS CRUDOS EXTRAÍDOS DEL PDF:\n{datos_crudos}",
+                            ],
+                            config=config_gen,
+                        )
 
                     st.session_state["reporte_editado"] = response.text
                     st.success("¡Borrador generado con éxito!")
                 except Exception as e:
-                    st.error(f"Error al generar: {str(e)}")
+                    st.error(f"Error al generar el reporte: {str(e)}")
 
 # MÓDULO DE EDICIÓN MANUAL Y DESCARGA DE PDF OFICIAL
 if st.session_state["reporte_editado"]:
     st.markdown("---")
     st.subheader("✏️ Editor Manual del Reporte")
     st.info(
-        "Puede modificar cualquier dato, redacción, valor o conclusión antes de"
-        " descargar el PDF oficial."
+        "Verifique los datos clínicos. Puede modificar cualquier valor, redacción"
+        " o conclusión antes de descargar el PDF oficial."
     )
 
     st.session_state["reporte_editado"] = st.text_area(
-        "Modifique el texto del reporte según su criterio clínico:",
+        "Modifique el texto del reporte según su criterio médico:",
         value=st.session_state["reporte_editado"],
         height=350,
     )
@@ -186,3 +201,4 @@ if st.session_state["reporte_editado"]:
             file_name="Ecocardiograma_Definitivo_Ross.pdf",
             mime="application/pdf",
         )
+11
