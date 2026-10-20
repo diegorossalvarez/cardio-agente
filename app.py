@@ -7,6 +7,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from ejemplos_ross import EJEMPLO_NORMAL
 
 # 1. Configuración de la Interfaz
 st.set_page_config(
@@ -30,31 +31,22 @@ def extraer_texto_pdf(file_bytes) -> str:
     return texto_completo
 
 
-# PROMPT MÉDICO CLINICAMENTE BLINDADO (CERO ALUCINACIONES)
-PROMPT_MEDICO_BLINDADO = """
-Eres un asistente médico especializado en ecocardiografía estricta que redacta reportes clínicos para el Dr. Diego Ross Álvarez.
+# PROMPT MAESTRO CON ESTILO SECO, DIRECTO Y CERO INFERENCIAS CLÍNICAS
+PROMPT_MEDICO_MAESTRO = f"""
+Eres un asistente médico especializado en ecocardiografía que redacta exclusivamente con el estilo, tono y formato técnico del Dr. Diego Ross Álvarez.
 
-MISIÓN:
-Analizar las mediciones ecocardiográficas extraídas de la consola de ultrasonido y generar un informe bien estructurado, ordenado y clínicamente preciso.
+DIRECTRICES DE ESTILO OBLIGATORIAS (CERO CHATGPT):
+1. TONO SECO Y DIRECTO: No utilices introducciones largas, florituras literarias, explicaciones pedagógicas ni frases típicas de IA (como "es importante destacar", "sugiere fuertemente", "cabe mencionar"). Ve directo al dato y al diagnóstico de forma médica y concisa.
+2. CERO INFERENCIAS DE ETIOLOGÍA: Está estrictamente prohibido asumir o inventar etiologías (ej. "isquémica-necrótica", "infarto antiguo") a menos que el dato esté explícitamente escrito en las mediciones o antecedentes de entrada. Limítate a describir estrictamente los hallazgos mecánicos y geométricos demostrados.
+3. VALORES ABSOLUTOS: Interpreta velocidades y gradientes como valores absolutos si provienen de inversiones del espectro Doppler.
+4. FIDELIDAD DE DATOS: No emitas juicios cualitativos sobre estructuras si falta el parámetro cuantitativo (ej. no califiques la función global del VD si solo tienes TAPSE sin FACVD o s' tisular).
 
-REGLAS CLÍNICAS ESTRICTAS DE CERO SUPOSICIÓN:
-1. VALORES ABSOLUTOS: Interpreta velocidades, gradientes y tiempos como valores absolutos si provienen de inversiones del espectro Doppler.
-2. FIDELIDAD ABSOLUTA DE DATOS (CRÍTICO): Utiliza EXCLUSIVAMENTE las mediciones presentes en el texto recibido. 
-   - PROHIBIDO emitir juicios cualitativos sobre el Ventrículo Derecho (ej. decir "función sistólica del VD disminuida o deprimida") a menos que poseas el valor cuantitativo explícito en el texto (como FACVD o onda s' tisular). Si solo tienes TAPSE, reporta únicamente el valor del TAPSE sin calificar globalmente la función del VD si no hay sustento matemático.
-   - Si un parámetro no existe en los datos crudos, omítelo por completo; nunca asumas ni inventes hallazgos.
-3. ESTRUCTURA DEL INFORME:
-   Organiza el reporte obligatoriamente en las siguientes secciones separadas por saltos de línea:
-   - DATOS DEL PACIENTE (Nombre, Edad, ASC)
-   - ECOCARDIOGRAMA TRANSTORÁCICO (Texto descriptivo ordenado por cavidades: Aurícula Izquierda, Aurícula Derecha, Ventrículo Izquierdo, Ventrículo Derecho, Válvulas Mitral/Aórtica/Tricúspide/Pulmonar, Pericardio y Cava Inferior).
-   - CONCLUSIONES (Puntos numerados objetivos basados estrictamente en las mediciones).
-   - DIAGNÓSTICO INTEGRATIVO.
+---
+EJEMPLO DE REFERENCIA DE TU ESTILO:
+{EJEMPLO_NORMAL}
+---
 
-ESTILO Y FIRMA:
-Al final del informe incluye obligatoriamente la firma institucional:
-DR ROSS ALVAREZ DIEGO
-Cardiólogo Clínico | Cédula 12883155 | Avalado por la UNAM
-Electrofisiólogo egresado CMN 20 de Noviembre
-9812438407
+AHORA, PROCESA LOS SIGUIENTES DATOS CRUDOS DEL NUEVO ESTUDIO BAJO ESTE MISMO ESTÁNDAR EXACTO:
 """
 
 
@@ -141,17 +133,17 @@ if uploaded_file is not None:
         st.warning("Por favor, ingrese su Gemini API Key en el panel lateral.")
     else:
         if st.button("🚀 Generar Borrador con IA"):
-            with st.spinner("Procesando mediciones y aplicando filtros clínicos..."):
+            with st.spinner("Procesando mediciones con criterio clínico de Diego Ross..."):
                 try:
                     datos_crudos = extraer_texto_pdf(uploaded_file.read())
                     client = genai.Client(api_key=api_key)
 
-                    # Configuración estricta de temperatura (Cero creatividad, total apego a datos)
+                    # Configuración estricta determinista
                     config_gen = types.GenerateContentConfig(
                         temperature=0.0
                     )
 
-                    # Bucle robusto de fallback entre modelos flash ante saturación (503)
+                    # Bucle robusto con fallback automático entre modelos flash
                     modelos = ["gemini-3.8-flash", "gemini-2.5-flash"]
                     response = None
 
@@ -160,21 +152,20 @@ if uploaded_file is not None:
                             response = client.models.generate_content(
                                 model=modelo,
                                 contents=[
-                                    PROMPT_MEDICO_BLINDADO,
+                                    PROMPT_MEDICO_MAESTRO,
                                     f"DATOS CRUDOS EXTRAÍDOS DEL PDF:\n{datos_crudos}",
                                 ],
                                 config=config_gen,
                             )
                             break
                         except Exception as e:
-                            # Si es error de saturación u otro modelo, intenta con el siguiente de la lista
                             if "503" in str(e) or "404" in str(e):
                                 continue
                             raise
 
                     if response is None:
                         raise Exception(
-                            "Gemini se encuentra temporalmente saturado. Intente nuevamente en unos minutos."
+                            "Gemini se encuentra temporalmente saturado. Intente nuevamente."
                         )
 
                     st.session_state["reporte_editado"] = response.text
