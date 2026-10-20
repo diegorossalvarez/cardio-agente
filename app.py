@@ -3,8 +3,12 @@ import re
 import pdfplumber
 from google import genai
 import streamlit as st
+from reportlab.lib.pagesizes import letter
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
-# Configuración de la interfaz en Streamlit
+# 1. Configuración de la Interfaz
 st.set_page_config(
     page_title="CardioAgente - Dr. Diego Ross Álvarez", layout="wide"
 )
@@ -12,15 +16,11 @@ st.set_page_config(
 st.title("CardioAgente - Generador de Ecocardiogramas")
 st.subheader("Dr. Diego Ross Álvarez | Cardiólogo - Electrofisiólogo")
 
-# Campo para la API Key en la barra lateral
 api_key = st.sidebar.text_input("Gemini API Key", type="password")
 
 
 def sanitizar_mediciones_chison(texto_raw: str) -> str:
-    """Fase 1 (Python): Limpia los signos negativos por inversión de polaridad Doppler
-
-    (ej. -0.06 s -> 0.06 s, -95.87 cm/s -> 95.87 cm/s) para asegurar valores absolutos.
-    """
+    """Fase 1 (Python): Limpia los signos negativos por inversión de polaridad Doppler"""
     texto_limpio = re.sub(r"-(\d+\.?\d*)", r"\1", texto_raw)
     return texto_limpio
 
@@ -35,7 +35,7 @@ def extraer_texto_pdf(file_bytes) -> str:
     return sanitizar_mediciones_chison(texto_completo)
 
 
-# PROMPT MAESTRO CON EJEMPLO REAL DE SU PRÁCTICA (GOLD STANDARD)
+# PROMPT MAESTRO GOLD STANDARD
 PROMPT_GOLD_STANDARD = """
 Eres un asistente médico inteligente especializado en ecocardiografía que redacta reportes con el nivel clínico, rigor y estilo exacto del Dr. Diego Ross Álvarez.
 
@@ -43,12 +43,12 @@ TU MISIÓN:
 Transformar las mediciones crudas provistas por la consola de ultrasonido en un reporte médico con EXACTAMENTE la misma estructura, densidad de datos, nomenclatura y formato compacto de tu plantilla de referencia.
 
 REGLAS ESTRICTAS:
-1. VALORES ABSOLUTOS: Todos los parámetros numéricos (THP, AVM, velocidades) deben reportarse obligatoriamente como valores positivos.
-2. FIDELIDAD DE DATOS: Utiliza únicamente los parámetros presentes en la entrada. No inventes valores ni asumas mediciones ausentes.
-3. ESTRUCTURA DE 8 SECCIONES: Mantén el formato de viñetas por cavidad/válvula, seguido de conclusiones numéricas y el diagnóstico integrativo.
+1. VALORES ABSOLUTOS: Todos los parámetros numéricos deben reportarse obligatoriamente como valores positivos.
+2. FIDELIDAD DE DATOS: Utiliza únicamente los parámetros presentes en la entrada. No inventes valores ni asumas mediciones ausentes (ej. si no hay FACVD numérico, no emitas juicios subjetivos sobre el ventrículo derecho sin respaldo).
+3. ESTRUCTURA DE SECCIONES Y SALTOS: Separa cada sección claramente con saltos de línea para mantener el orden visual.
 
 ---
-### EJEMPLO DE REFERENCIA (GOLD STANDARD - TUS REPORTES REALES):
+### EJEMPLO DE REFERENCIA (GOLD STANDARD):
 
 DR. ROSS ALVAREZ CARDIOLOGIA
 Reporte ecocardiograma transtoracico
@@ -87,52 +87,128 @@ AV tormenta # 20, cp 24090 | 9812438407
 AHORA, PROCESA LOS SIGUIENTES DATOS CRUDOS DEL NUEVO ESTUDIO BAJO ESTE MISMO ESTÁNDAR EXACTO:
 """
 
-# Interfaz para cargar el PDF del ecógrafo
+
+# Función para generar el PDF formal con ReportLab
+def generar_pdf_reportlab(texto_reporte: str) -> bytes:
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        rightMargin=36,
+        leftMargin=36,
+        topMargin=36,
+        bottomMargin=36,
+    )
+
+    story = []
+    styles = getSampleStyleSheet()
+
+    color_primario = colors.HexColor("#1A365D")  # Azul marino médico
+    color_secundario = colors.HexColor("#2B6CB0")
+
+    estilo_encabezado = ParagraphStyle(
+        "EncabezadoClinica",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=11,
+        leading=13,
+        textColor=color_primario,
+        alignment=1,  # Centrado
+    )
+
+    estilo_cuerpo = ParagraphStyle(
+        "CuerpoReporte",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=9.5,
+        leading=12,
+        textColor=colors.HexColor("#2D3748"),
+    )
+
+    # Membrete institucional fijo
+    story.append(Paragraph("<b>DR. DIEGO ROSS ÁLVAREZ</b>", estilo_encabezado))
+    story.append(
+        Paragraph(
+            "Cardiólogo - Electrofisiólogo | Especialidad UNAM 12883155",
+            estilo_encabezado,
+        )
+    )
+    story.append(
+        Paragraph(
+            "WhatsApp: 9812438407 | Consultorio: Zenzontle 110, Fracc. La Ceiba,"
+            " Villahermosa, Tabasco",
+            ParagraphStyle(
+                "Sub", parent=estilo_encabezado, fontSize=8.5, textColor=color_secundario
+            ),
+        )
+    )
+    story.append(Spacer(1, 10))
+
+    # Inyección del texto (respetando las líneas editadas por el doctor)
+    for linea in texto_reporte.split("\n"):
+        if linea.strip():
+            story.append(Paragraph(linea, estilo_cuerpo))
+            story.append(Spacer(1, 3))
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+# Inicializar estado en sesión para la edición
+if "reporte_editado" not in st.session_state:
+    st.session_state["reporte_editado"] = ""
+
+# Interfaz de carga
 uploaded_file = st.file_uploader(
-    "Cargar archivo",
-    type=None
+    "Cargar archivo PDF de mediciones del ecógrafo", type=["pdf"]
 )
 
 if uploaded_file is not None:
-    st.write("ARCHIVO RECIBIDO")
-    st.write(uploaded_file.name)
-    st.write(uploaded_file.type)
-    st.write(uploaded_file.size)
-# Procesamiento automático o manual visible
-if uploaded_file:
     st.success(f"Archivo cargado correctamente: {uploaded_file.name}")
 
     if not api_key:
-        st.warning(
-            "Por favor, ingrese su Gemini API Key en el panel lateral izquierdo para continuar."
-        )
+        st.warning("Por favor, ingrese su Gemini API Key en el panel lateral.")
     else:
-        if st.button("🚀 Generar Reporte Clínico"):
-            with st.spinner(
-                "Procesando mediciones y aplicando plantilla clínica..."
-            ):
+        if st.button("🚀 Generar Borrador con IA"):
+            with st.spinner("Procesando mediciones y aplicando plantilla..."):
                 try:
-                    # Paso 1: Extracción y normalización con Python
                     datos_crudos = extraer_texto_pdf(uploaded_file.read())
-
-                    # Paso 2: Invocación de la API de Gemini
                     client = genai.Client(api_key=api_key)
                     response = client.models.generate_content(
-                        model="gemini-3.8-flash",
+                        model="gemini-2.5-flash",
                         contents=[
                             PROMPT_GOLD_STANDARD,
                             f"DATOS CRUDOS DEL NUEVO ESTUDIO:\n{datos_crudos}",
                         ],
                     )
-
-                    st.subheader("Reporte Clínico Generado")
-                    st.markdown(response.text)
-
-                    st.download_button(
-                        "Descargar Reporte (.txt)",
-                        response.text,
-                        file_name="Reporte_Ecocardiograma_Ross.txt",
-                    )
-
+                    st.session_state["reporte_editado"] = response.text
+                    st.success("¡Borrador generado con éxito!")
                 except Exception as e:
-                    st.error(f"Error al generar el reporte: {str(e)}")
+                    st.error(f"Error al generar: {str(e)}")
+
+# MÓDULO DE EDICIÓN MANUAL Y DESCARGA DE PDF OFICIAL
+if st.session_state["reporte_editado"]:
+    st.markdown("---")
+    st.subheader("✏️ Editor Manual del Reporte")
+    st.info(
+        "Puede modificar cualquier dato, redacción, valor o conclusión antes de"
+        " descargar el PDF oficial."
+    )
+
+    # Caja de texto para editar libremente
+    st.session_state["reporte_editado"] = st.text_area(
+        "Modifique el texto del reporte según su criterio clínico:",
+        value=st.session_state["reporte_editado"],
+        height=350,
+    )
+
+    # Botón para compilar el PDF definitivo con ReportLab
+    if st.button("📥 Generar y Descargar PDF Oficial"):
+        pdf_bytes = generar_pdf_reportlab(st.session_state["reporte_editado"])
+        st.download_button(
+            label="💾 Descargar PDF de Ecocardiograma",
+            data=pdf_bytes,
+            file_name="Ecocardiograma_Definitivo_Ross.pdf",
+            mime="application/pdf",
+        )
