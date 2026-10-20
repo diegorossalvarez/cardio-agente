@@ -8,9 +8,11 @@ from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from ejemplos_ross import (
-    EJEMPLO_NORMAL,
-    EJEMPLO_REMODELADO,
-    EJEMPLO_FEVI_DEPRIMIDA,
+    EJEMPLO_1_NORMAL,
+    EJEMPLO_2_HIPERTROFIA,
+    EJEMPLO_3_FEVI_DEPRIMIDA,
+    EJEMPLO_4_VALVULOPATIA,
+    EJEMPLO_5_HAP,
 )
 
 # 1. Configuración de la Interfaz
@@ -34,7 +36,7 @@ def extraer_texto_pdf(file_bytes) -> str:
     return texto_completo
 
 
-# PROMPT MAESTRO CON TRES EJEMPLOS Y JERARQUÍA ESTRICTA
+# PROMPT MAESTRO CON MATRIZ COMPLETA DE 5 EJEMPLOS Y JERARQUÍA ESTRICTA
 PROMPT_MEDICO_MAESTRO = f"""
 Eres un asistente médico especializado en ecocardiografía que redacta exclusivamente con el estilo, tono y formato técnico del Dr. Diego Ross Álvarez.
 
@@ -55,18 +57,28 @@ DIRECTRICES DE SECUENCIA Y ESTILO OBLIGATORIAS:
    7. Alteraciones de la movilidad
 3. TONO SECO Y DIRECTO: Sin introducciones largas, florituras literarias o frases de IA (como "es importante destacar"). Ve directo al dato clínico.
 4. CERO INFERENCIAS DE ETIOLOGÍA: Prohibido asumir etiologías si no están explícitas en los datos crudos.
+5. NOMENCLATURA Y UNIDADES:
+   - Utiliza "Gradiente de IT" en lugar de "Gradiente AD-VD".
+   - Conclusiones de hipertensión pulmonar en términos de probabilidad (ej. "Baja probabilidad de hipertensión pulmonar", "Alta probabilidad de hipertensión pulmonar").
+   - El aplanamiento del septum es un parámetro cualitativo que va en la descripción/geometría, no como punto en conclusiones.
 
 ---
-EJEMPLOS DE REFERENCIA DE TU ESTILO Y SECUENCIA:
+MATRIZ DE ENTRENAMIENTO (ENTRADA Y SALIDA EXPERTA):
 
 CASO 1 (NORMAL):
-{EJEMPLO_NORMAL}
+{EJEMPLO_1_NORMAL}
 
-CASO 2 (REMODELADO):
-{EJEMPLO_REMODELADO}
+CASO 2 (HIPERTROFIA / REMODELADO):
+{EJEMPLO_2_HIPERTROFIA}
 
-CASO 3 (FEVI DEPRIMIDA):
-{EJEMPLO_FEVI_DEPRIMIDA}
+CASO 3 (FEVI DEPRIMIDA / TRASTORNO SEGMENTARIO):
+{EJEMPLO_3_FEVI_DEPRIMIDA}
+
+CASO 4 (VALVULOPATÍA SIGNIFICATIVA):
+{EJEMPLO_4_VALVULOPATIA}
+
+CASO 5 (HIPERTENSIÓN PULMONAR / REPERCUSIÓN DERECHA):
+{EJEMPLO_5_HAP}
 ---
 
 AHORA, PROCESA LOS SIGUIENTES DATOS CRUDOS BAJO ESTE MISMO ESTÁNDAR EXACTO:
@@ -157,6 +169,7 @@ if uploaded_file is not None:
                     client = genai.Client(api_key=api_key)
                     config_gen = types.GenerateContentConfig(temperature=0.0)
 
+                    # Configurado con Gemini 3.8 Flash como modelo principal
                     modelos = ["gemini-3.8-flash", "gemini-3.0-flash"]
                     response = None
 
