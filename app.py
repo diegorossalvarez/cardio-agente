@@ -154,14 +154,35 @@ if uploaded_file is not None:
                     # Llamada con fallback automático entre modelos flash para máxima robustez
                     response = None
                     try:
-                        response = client.models.generate_content(
-                            model="gemini-3.8-flash",
-                            contents=[
-                                PROMPT_MEDICO_BLINDADO,
-                                f"DATOS CRUDOS EXTRAÍDOS DEL PDF:\n{datos_crudos}",
-                            ],
-                            config=config_gen,
-                        )
+                        modelos = [
+    "gemini-3.8-flash",
+    "gemini-3.0-flash",
+]
+
+response = None
+
+for modelo in modelos:
+    try:
+        response = client.models.generate_content(
+            model=modelo,
+            contents=[
+                PROMPT_MEDICO,
+                f"DATOS CRUDOS EXTRAÍDOS DEL PDF:\n{datos_crudos}",
+            ],
+            config=config_gen,
+        )
+        break
+
+    except Exception as e:
+        if "503" in str(e):
+            continue
+        raise
+
+if response is None:
+    raise Exception(
+        "Gemini se encuentra temporalmente saturado. Intente nuevamente en unos minutos."
+    )
+
                     except Exception:
                         # Fallback automático a gemini-2.5-flash o alternativo si se satura
                         response = client.models.generate_content(
