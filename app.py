@@ -7,7 +7,11 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from ejemplos_ross import EJEMPLO_NORMAL
+from ejemplos_ross import (
+    EJEMPLO_NORMAL,
+    EJEMPLO_REMODELADO,
+    EJEMPLO_FEVI_DEPRIMIDA,
+)
 
 # 1. Configuración de la Interfaz
 st.set_page_config(
@@ -21,7 +25,6 @@ api_key = st.sidebar.text_input("Gemini API Key", type="password")
 
 
 def extraer_texto_pdf(file_bytes) -> str:
-    """Extrae el texto completo del PDF de la consola Chison limpiamente."""
     texto_completo = ""
     with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
         for pagina in pdf.pages:
@@ -31,26 +34,45 @@ def extraer_texto_pdf(file_bytes) -> str:
     return texto_completo
 
 
-# PROMPT MAESTRO CON ESTILO SECO, DIRECTO Y CERO INFERENCIAS CLÍNICAS
+# PROMPT MAESTRO CON TRES EJEMPLOS Y JERARQUÍA ESTRICTA
 PROMPT_MEDICO_MAESTRO = f"""
 Eres un asistente médico especializado en ecocardiografía que redacta exclusivamente con el estilo, tono y formato técnico del Dr. Diego Ross Álvarez.
 
-DIRECTRICES DE ESTILO OBLIGATORIAS (CERO CHATGPT):
-1. TONO SECO Y DIRECTO: No utilices introducciones largas, florituras literarias, explicaciones pedagógicas ni frases típicas de IA (como "es importante destacar", "sugiere fuertemente", "cabe mencionar"). Ve directo al dato y al diagnóstico de forma médica y concisa.
-2. CERO INFERENCIAS DE ETIOLOGÍA: Está estrictamente prohibido asumir o inventar etiologías (ej. "isquémica-necrótica", "infarto antiguo") a menos que el dato esté explícitamente escrito en las mediciones o antecedentes de entrada. Limítate a describir estrictamente los hallazgos mecánicos y geométricos demostrados.
-3. VALORES ABSOLUTOS: Interpreta velocidades y gradientes como valores absolutos si provienen de inversiones del espectro Doppler.
-4. FIDELIDAD DE DATOS: No emitas juicios cualitativos sobre estructuras si falta el parámetro cuantitativo (ej. no califiques la función global del VD si solo tienes TAPSE sin FACVD o s' tisular).
+DIRECTRICES DE SECUENCIA Y ESTILO OBLIGATORIAS:
+1. ORDEN ANATÓMICO Y JERÁRQUICO ESTRICTO EN CAVIDADES: Al describir los ventrículos, sigue obligatoriamente este orden: 
+   1.° Geometría y patrón. 
+   2.° Diámetros y dimensiones. 
+   3.° Movilidad y contractilidad. 
+   4.° Función sistólica. 
+   5.° Función diastólica.
+2. ORDEN ESTRICTO EN CONCLUSIONES: Las conclusiones numéricas deben seguir indefectiblemente esta secuencia:
+   1. Geometría
+   2. Dimensiones
+   3. Función sistólica de ambos ventrículos
+   4. Función diastólica
+   5. Valvulopatías
+   6. Probabilidad de hipertensión pulmonar
+   7. Alteraciones de la movilidad
+3. TONO SECO Y DIRECTO: Sin introducciones largas, florituras literarias o frases de IA (como "es importante destacar"). Ve directo al dato clínico.
+4. CERO INFERENCIAS DE ETIOLOGÍA: Prohibido asumir etiologías si no están explícitas en los datos crudos.
 
 ---
-EJEMPLO DE REFERENCIA DE TU ESTILO:
+EJEMPLOS DE REFERENCIA DE TU ESTILO Y SECUENCIA:
+
+CASO 1 (NORMAL):
 {EJEMPLO_NORMAL}
+
+CASO 2 (REMODELADO):
+{EJEMPLO_REMODELADO}
+
+CASO 3 (FEVI DEPRIMIDA):
+{EJEMPLO_FEVI_DEPRIMIDA}
 ---
 
-AHORA, PROCESA LOS SIGUIENTES DATOS CRUDOS DEL NUEVO ESTUDIO BAJO ESTE MISMO ESTÁNDAR EXACTO:
+AHORA, PROCESA LOS SIGUIENTES DATOS CRUDOS BAJO ESTE MISMO ESTÁNDAR EXACTO:
 """
 
 
-# Función para generar el PDF formal con ReportLab
 def generar_pdf_reportlab(texto_reporte: str) -> bytes:
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -65,7 +87,7 @@ def generar_pdf_reportlab(texto_reporte: str) -> bytes:
     story = []
     styles = getSampleStyleSheet()
 
-    color_primario = colors.HexColor("#1A365D")  # Azul marino médico
+    color_primario = colors.HexColor("#1A365D")
     color_secundario = colors.HexColor("#2B6CB0")
 
     estilo_encabezado = ParagraphStyle(
@@ -87,7 +109,6 @@ def generar_pdf_reportlab(texto_reporte: str) -> bytes:
         textColor=colors.HexColor("#2D3748"),
     )
 
-    # Membrete institucional fijo
     story.append(Paragraph("<b>DR. DIEGO ROSS ÁLVAREZ</b>", estilo_encabezado))
     story.append(
         Paragraph(
@@ -106,7 +127,6 @@ def generar_pdf_reportlab(texto_reporte: str) -> bytes:
     )
     story.append(Spacer(1, 10))
 
-    # Inyección del texto
     for linea in texto_reporte.split("\n"):
         if linea.strip():
             story.append(Paragraph(linea, estilo_cuerpo))
@@ -117,11 +137,9 @@ def generar_pdf_reportlab(texto_reporte: str) -> bytes:
     return buffer.getvalue()
 
 
-# Inicializar estado en sesión para la edición
 if "reporte_editado" not in st.session_state:
     st.session_state["reporte_editado"] = ""
 
-# Interfaz de carga
 uploaded_file = st.file_uploader(
     "Cargar archivo PDF de mediciones del ecógrafo", type=["pdf"]
 )
@@ -137,14 +155,9 @@ if uploaded_file is not None:
                 try:
                     datos_crudos = extraer_texto_pdf(uploaded_file.read())
                     client = genai.Client(api_key=api_key)
+                    config_gen = types.GenerateContentConfig(temperature=0.0)
 
-                    # Configuración estricta determinista
-                    config_gen = types.GenerateContentConfig(
-                        temperature=0.0
-                    )
-
-                    # Bucle robusto con fallback automático entre modelos flash
-                    modelos = ["gemini-3.8-flash", "gemini-2.5-flash"]
+                    modelos = ["gemini-3.8-flash", "gemini-3.0-flash"]
                     response = None
 
                     for modelo in modelos:
@@ -173,7 +186,6 @@ if uploaded_file is not None:
                 except Exception as e:
                     st.error(f"Error al generar el reporte: {str(e)}")
 
-# MÓDULO DE EDICIÓN MANUAL Y DESCARGA DE PDF OFICIAL
 if st.session_state["reporte_editado"]:
     st.markdown("---")
     st.subheader("✏️ Editor Manual del Reporte")
