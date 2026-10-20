@@ -1,7 +1,7 @@
 import io
-import re
 import pdfplumber
 from google import genai
+from google.genai import types
 import streamlit as st
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
@@ -19,72 +19,40 @@ st.subheader("Dr. Diego Ross Álvarez | Cardiólogo - Electrofisiólogo")
 api_key = st.sidebar.text_input("Gemini API Key", type="password")
 
 
-def sanitizar_mediciones_chison(texto_raw: str) -> str:
-    """Fase 1 (Python): Limpia los signos negativos por inversión de polaridad Doppler"""
-    texto_limpio = re.sub(r"-(\d+\.?\d*)", r"\1", texto_raw)
-    return texto_limpio
-
-
 def extraer_texto_pdf(file_bytes) -> str:
+    """Extrae el texto completo del PDF extraído de la consola Chison sin alteración por Regex."""
     texto_completo = ""
     with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
         for pagina in pdf.pages:
             t = pagina.extract_text()
             if t:
                 texto_completo += t + "\n"
-    return sanitizar_mediciones_chison(texto_completo)
+    return texto_completo
 
 
-# PROMPT MAESTRO GOLD STANDARD
-PROMPT_GOLD_STANDARD = """
-Eres un asistente médico inteligente especializado en ecocardiografía que redacta reportes con el nivel clínico, rigor y estilo exacto del Dr. Diego Ross Álvarez.
+# PROMPT ESTRUCTURAL Y CLÍNICO ROBUSTO
+PROMPT_MEDICO = """
+Eres un asistente médico especializado en ecocardiografía que redacta reportes clínicos para el Dr. Diego Ross Álvarez.
 
-TU MISIÓN:
-Transformar las mediciones crudas provistas por la consola de ultrasonido en un reporte médico con EXACTAMENTE la misma estructura, densidad de datos, nomenclatura y formato compacto de tu plantilla de referencia.
+MISION:
+Analizar las mediciones ecocardiográficas extraídas de la consola de ultrasonido y generar un informe bien estructurado, ordenado y clínicamente preciso.
 
-REGLAS ESTRICTAS:
-1. VALORES ABSOLUTOS: Todos los parámetros numéricos deben reportarse obligatoriamente como valores positivos.
-2. FIDELIDAD DE DATOS: Utiliza únicamente los parámetros presentes en la entrada. No inventes valores ni asumas mediciones ausentes (ej. si no hay FACVD numérico, no emitas juicios subjetivos sobre el ventrículo derecho sin respaldo).
-3. ESTRUCTURA DE SECCIONES Y SALTOS: Separa cada sección claramente con saltos de línea para mantener el orden visual.
+REGLAS CLINICAS STRICTAS:
+1. VALORES NUMÉRICOS: Interpreta las velocidades, gradientes y tiempos como valores absolutos si provienen de inversiones del espectro Doppler (p. ej. THP o AVM con signo negativo).
+2. FIDELIDAD DE DATOS: Utiliza EXCLUSIVAMENTE las mediciones presentes en el texto recibido. Si un valor no existe (p. ej. FACVD, strain, o un gradiente específico), NO asumas ni inventes hallazgos o diagnósticos sobre esa cavidad o válvula.
+3. ESTRUCTURA DEL INFORME:
+   Organiza el reporte obligatoriamente en las siguientes secciones separadas claramente por saltos de línea:
+   - DATOS DEL PACIENTE (Nombre, Edad, ASC)
+   - ECOCARDIOGRAMA TRANSTORÁCICO (Texto descriptivo ordenado por cavidades: Aurícula Izquierda, Aurícula Derecha, Ventrículo Izquierdo, Ventrículo Derecho, Válvulas Mitral/Aórtica/Tricúspide/Pulmonar, Pericardio y Cava Inferior).
+   - CONCLUSIONES (Puntos numerados objetivos basados estrictamente en las mediciones).
+   - DIAGNÓSTICO INTEGRATIVO.
 
----
-### EJEMPLO DE REFERENCIA (GOLD STANDARD):
-
-DR. ROSS ALVAREZ CARDIOLOGIA
-Reporte ecocardiograma transtoracico
-
-PACIENTE: USVALDO JAVIER RIVERO AGUIRRE
-EDAD: 35 ANOS | ASC: 2.0 m²
-
-Se realizo ecocardiograma transtoracico en reposo, buena ventana, ritmo sinusal.
-
-• Auricula izquierda: levemente dilatada, LAVI 39 mL/m2, diámetro AI 28 mm.
-• Auricula derecha: tamaño normal, RAVI 28 mL/m2.
-• Ventriculo izquierdo: masa indexada 152 gr/m2, GPR 0.54, movilidad global y segmentaria normal, no dilatado, DDVI 48 mm, SIV 13 mm, PP 12 mm, DSVI 32 mm, VTD 146 ml, VTS 58 ml, fevi simpson modificado 60%, función diastolica normal, onda E 89 cm/s, onda A 62 cm/s, E/A 1.4, TDA 130 ms, E tisular lateral 12 cm/s, E tisular medial 12 cm/s.
-• Ventriculo derecho: levemente dilatado, diámetros 41x28x94 mm, función sistólica global y longitudinal normal, Tapse 30 mm, onda s tisular tricúspidea 12.8 cm/s, CAFVD 50%.
-• Valvula mitral: aparato valvular y subvalvular de morfologia normal, AVM por THP 5.0 cm2, sin gradiente significativo de llenado, sin insuficiencia.
-• Valvula tricuspide: morfologia normal, sin valvulopatia, sin gradiente de llenado significativo, velocidad de IT 2 m/s, gradiente 16 mmHg.
-• Valvula aortica: sin insuficiencia, sin gradiente de salida significativo. AVAo por continuidad 3.7 cm2, diámetros de la raíz aórtica normal.
-• Valvula pulmonar: TSVD prox distal 23 mm, prox 31 mm, TAP 150 ms, sin insuficiencia ni gradiente de salida significativo, presión sistólica pulmonar estimada 20 mmHg.
-• Pericardio de aspecto normal. Sin masas o trombos. Cava 18 mm, colapso mas del 50%.
-
-CONCLUSIONES:
-1. Función sistólica de ambos ventrículos normal.
-2. Función diastólica normal.
-3. Sin valvulopatías.
-4. Baja probabilidad de hipertensión pulmonar.
-5. Hipertrofia miocárdica inducida por ejercicio.
-
-DIAGNOSTICO:
-Estudio ecocardiográfico con hipertrofia miocárdica adaptativa; función sistólica y diastólica conservadas.
-
+ESTILO Y FIRMA:
+Al final del informe incluye la firma institucional:
 DR ROSS ALVAREZ DIEGO
-Cardiologo clinico | cedula 12883155 | avalado por la UNAM
-Electrofisiologo egresado CMN 20 de noviembre
-AV tormenta # 20, cp 24090 | 9812438407
----
-
-AHORA, PROCESA LOS SIGUIENTES DATOS CRUDOS DEL NUEVO ESTUDIO BAJO ESTE MISMO ESTÁNDAR EXACTO:
+Cardiólogo Clínico | Cédula 12883155 | Avalado por la UNAM
+Electrofisiólogo egresado CMN 20 de Noviembre
+9812438407
 """
 
 
@@ -113,7 +81,7 @@ def generar_pdf_reportlab(texto_reporte: str) -> bytes:
         fontSize=11,
         leading=13,
         textColor=color_primario,
-        alignment=1,  # Centrado
+        alignment=1,
     )
 
     estilo_cuerpo = ParagraphStyle(
@@ -144,7 +112,7 @@ def generar_pdf_reportlab(texto_reporte: str) -> bytes:
     )
     story.append(Spacer(1, 10))
 
-    # Inyección del texto (respetando las líneas editadas por el doctor)
+    # Inyección del texto
     for linea in texto_reporte.split("\n"):
         if linea.strip():
             story.append(Paragraph(linea, estilo_cuerpo))
@@ -175,13 +143,21 @@ if uploaded_file is not None:
                 try:
                     datos_crudos = extraer_texto_pdf(uploaded_file.read())
                     client = genai.Client(api_key=api_key)
-                    response = client.models.generate_content(
-                        model="gemini-2.5-flash",
-                        contents=[
-                            PROMPT_GOLD_STANDARD,
-                            f"DATOS CRUDOS DEL NUEVO ESTUDIO:\n{datos_crudos}",
-                        ],
+
+                    # Configuración estricta de temperatura
+                    config_gen = types.GenerateContentConfig(
+                        temperature=0.0
                     )
+
+                    response = client.models.generate_content(
+                        model="gemini-3.8-flash",
+                        contents=[
+                            PROMPT_MEDICO,
+                            f"DATOS CRUDOS EXTRAÍDOS DEL PDF:\n{datos_crudos}",
+                        ],
+                        config=config_gen,
+                    )
+
                     st.session_state["reporte_editado"] = response.text
                     st.success("¡Borrador generado con éxito!")
                 except Exception as e:
@@ -196,14 +172,12 @@ if st.session_state["reporte_editado"]:
         " descargar el PDF oficial."
     )
 
-    # Caja de texto para editar libremente
     st.session_state["reporte_editado"] = st.text_area(
         "Modifique el texto del reporte según su criterio clínico:",
         value=st.session_state["reporte_editado"],
         height=350,
     )
 
-    # Botón para compilar el PDF definitivo con ReportLab
     if st.button("📥 Generar y Descargar PDF Oficial"):
         pdf_bytes = generar_pdf_reportlab(st.session_state["reporte_editado"])
         st.download_button(
