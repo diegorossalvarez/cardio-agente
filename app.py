@@ -7,15 +7,18 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from ejemplos_ross import (
+
+# Importamos la nueva matriz limpia
+from ejemplos_ross_v2 import (
     EJEMPLO_1_NORMAL,
     EJEMPLO_2_HIPERTROFIA,
     EJEMPLO_3_FEVI_DEPRIMIDA,
     EJEMPLO_4_VALVULOPATIA,
     EJEMPLO_5_HAP,
+    EJEMPLO_6_CONGENITA,
+    EJEMPLO_7_PROTESIS,
 )
 
-# 1. Configuración de la Interfaz
 st.set_page_config(
     page_title="CardioAgente - Dr. Diego Ross Álvarez", layout="wide"
 )
@@ -36,34 +39,49 @@ def extraer_texto_pdf(file_bytes) -> str:
     return texto_completo
 
 
-# PROMPT MAESTRO CON MATRIZ COMPLETA DE 5 EJEMPLOS Y JERARQUÍA ESTRICTA
 PROMPT_MEDICO_MAESTRO = f"""
-Eres un asistente médico especializado en ecocardiografía que redacta exclusivamente con el estilo, tono y formato técnico del Dr. Diego Ross Álvarez.
+REGLA CRÍTICA ABSOLUTA:
+Cada afirmación, número, medición o hallazgo presente en el reporte DEBE DERIVAR DIRECTAMENTE DE LOS DATOS DE ENTRADA.
+Si un dato no aparece en la entrada, NO DEBE APARECER EN LA SALIDA.
+Está estrictamente prohibido inventar o inferir: dimensiones, volúmenes, áreas, masas, trombos, derrames, parámetros del VD, parámetros de las aurículas, parámetros valvulares, etiología o diagnósticos clínicos no expresamente proporcionados.
+
+REGLA DE PROHIBICIÓN DE DIAGNÓSTICOS ETIOLÓGICOS:
+Queda estrictamente prohibido diagnosticar o escribir en el reporte:
+- Miocardiopatía dilatada
+- Cardiopatía hipertensiva
+- Cardiopatía isquémica
+- Enfermedad degenerativa
+- Origen reumático
+- Etiología congénita
+salvo que dichas palabras exactas o diagnósticos explícitos aparezcan expresamente en los datos de entrada.
+
+REGLA DE AUSENCIA:
+Si una estructura no fue evaluada o no aparecen datos de ella en la entrada: NO MENCIONARLA.
+Ejemplo: Si no existen datos del ventrículo derecho, NO escribir "Ventrículo derecho normal". Simplemente omitir el punto o viñeta correspondiente.
 
 DIRECTRICES DE SECUENCIA Y ESTILO OBLIGATORIAS:
-1. ORDEN ANATÓMICO Y JERÁRQUICO ESTRICTO EN CAVIDADES: Al describir los ventrículos, sigue obligatoriamente este orden: 
+1. ORDEN ANATÓMICO Y JERÁRQUICO ESTRICTO EN CAVIDADES: Al describir los ventrículos presentes, sigue este orden:
    1.° Geometría y patrón. 
    2.° Diámetros y dimensiones. 
    3.° Movilidad y contractilidad. 
    4.° Función sistólica. 
    5.° Función diastólica.
-2. ORDEN ESTRICTO EN CONCLUSIONES: Las conclusiones numéricas deben seguir indefectiblemente esta secuencia:
+2. ORDEN ESTRICTO EN CONCLUSIONES (Solo incluir puntos correspondientes a estructuras evaluadas):
    1. Geometría
    2. Dimensiones
-   3. Función sistólica de ambos ventrículos
+   3. Función sistólica de ambos ventrículos (o del ventrículo evaluado)
    4. Función diastólica
    5. Valvulopatías
    6. Probabilidad de hipertensión pulmonar
    7. Alteraciones de la movilidad
-3. TONO SECO Y DIRECTO: Sin introducciones largas, florituras literarias o frases de IA (como "es importante destacar"). Ve directo al dato clínico.
-4. CERO INFERENCIAS DE ETIOLOGÍA: Prohibido asumir etiologías si no están explícitas en los datos crudos.
-5. NOMENCLATURA Y UNIDADES:
-   - Utiliza "Gradiente de IT" en lugar de "Gradiente AD-VD".
-   - Conclusiones de hipertensión pulmonar en términos de probabilidad (ej. "Baja probabilidad de hipertensión pulmonar", "Alta probabilidad de hipertensión pulmonar").
-   - El aplanamiento del septum es un parámetro cualitativo que va en la descripción/geometría, no como punto en conclusiones.
+3. TONO SECO Y DIRECTO: Sin introducciones largas ni frases de rellenado.
+4. NOMENCLATURA Y UNIDADES:
+   - Usa "Gradiente de IT" en lugar de "Gradiente AD-VD".
+   - Conclusiones de hipertensión pulmonar exclusivamente en términos de probabilidad (ej. "Baja probabilidad de hipertensión pulmonar", "Alta probabilidad de hipertensión pulmonar").
+   - El aplanamiento del septum es un parámetro cualitativo que va en la descripción/geometría del ventrículo, NUNCA como punto independiente en las conclusiones.
 
 ---
-MATRIZ DE ENTRENAMIENTO (ENTRADA Y SALIDA EXPERTA):
+MATRIZ DE ENTRENAMIENTO (ENTRADA Y SALIDA EXPERTA RASTREABLE 1:1):
 
 CASO 1 (NORMAL):
 {EJEMPLO_1_NORMAL}
@@ -74,14 +92,20 @@ CASO 2 (HIPERTROFIA / REMODELADO):
 CASO 3 (FEVI DEPRIMIDA / TRASTORNO SEGMENTARIO):
 {EJEMPLO_3_FEVI_DEPRIMIDA}
 
-CASO 4 (VALVULOPATÍA SIGNIFICATIVA):
+CASO 4 (VALVULOPATÍA SEVERA):
 {EJEMPLO_4_VALVULOPATIA}
 
 CASO 5 (HIPERTENSIÓN PULMONAR / REPERCUSIÓN DERECHA):
 {EJEMPLO_5_HAP}
+
+CASO 6 (CARDIOPATÍA CONGÉNITA CON SHUNT):
+{EJEMPLO_6_CONGENITA}
+
+CASO 7 (PRÓTESIS VALVULAR):
+{EJEMPLO_7_PROTESIS}
 ---
 
-AHORA, PROCESA LOS SIGUIENTES DATOS CRUDOS BAJO ESTE MISMO ESTÁNDAR EXACTO:
+AHORA, PROCESA LOS SIGUIENTES DATOS CRUDOS APLICANDO ESTRICTAMENTE LAS REGLAS DE FIDELIDAD Y AUSENCIA (SIN INVENTAR NINGÚN DATO QUE NO ESTÉ ABAJO):
 """
 
 
@@ -169,7 +193,6 @@ if uploaded_file is not None:
                     client = genai.Client(api_key=api_key)
                     config_gen = types.GenerateContentConfig(temperature=0.0)
 
-                    # Configurado con Gemini 3.8 Flash como modelo principal
                     modelos = ["gemini-3.8-flash", "gemini-3.0-flash"]
                     response = None
 
