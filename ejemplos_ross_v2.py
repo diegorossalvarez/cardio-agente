@@ -43,36 +43,13 @@ DIRECTRICES DE SECUENCIA Y ESTILO OBLIGATORIAS:
    - Utiliza "Gradiente de IT" en lugar de "Gradiente AD-VD".
    - Conclusiones de hipertensión pulmonar expresadas exclusivamente como probabilidad ("Baja probabilidad de hipertensión pulmonar", "Alta probabilidad de hipertensión pulmonar").
    - El aplanamiento del septum es cualitativo y se describe en geometría/VD, NUNCA como punto independiente en las conclusiones.
-
 ---
-MATRIZ DE ENTRENAMIENTO (CASOS CLÍNICOS):
-
-CASO 1 (NORMAL):
-{EJEMPLO_1_NORMAL}
-
-CASO 2 (HIPERTROFIA / REMODELADO):
-{EJEMPLO_2_HIPERTROFIA}
-
-CASO 3 (FEVI DEPRIMIDA / TRASTORNO SEGMENTARIO):
-{EJEMPLO_3_FEVI_DEPRIMIDA}
-
-CASO 4 (VALVULOPATÍA SEVERA):
-{EJEMPLO_4_VALVULOPATIA}
-
-CASO 5 (HIPERTENSIÓN PULMONAR / REPERCUSIÓN DERECHA):
-{EJEMPLO_5_HAP}
-
-CASO 6 (CARDIOPATÍA CONGÉNITA CON SHUNT):
-{EJEMPLO_6_CONGENITA}
-
-CASO 7 (PRÓTESIS VALVULAR):
-{EJEMPLO_7_PROTESIS}
----
-
-AHORA, PROCESA LOS SIGUIENTES DATOS CRUDOS APLICANDO ESTRICTAMENTE ESTAS REGLAS:
+¡AHORA, PROCESA LOS SIGUIENTES DATOS CRUDOS APLICANDO ESTRICTAMENTE ESTAS REGLAS:
 """
 # Muestras definitivas con trazabilidad 1:1 estricta (Entrada Cruda vs Reporte Ross)
 # Regla absoluta: Si no viene en la entrada, NO se escribe en la salida.
+
+# ejemplos_ross_v2.py
 
 EJEMPLO_1_NORMAL = """
 --- DATOS DE ENTRADA (Métricas del Ecógrafo) ---
