@@ -40,48 +40,165 @@ def extraer_texto_pdf(file_bytes) -> str:
 
 
 PROMPT_MEDICO_MAESTRO = f"""
-REGLA CRÍTICA ABSOLUTA:
-Cada afirmación, número, medición o hallazgo presente en el reporte DEBE DERIVAR DIRECTAMENTE DE LOS DATOS DE ENTRADA.
-Si un dato no aparece en la entrada, NO DEBE APARECER EN LA SALIDA.
-Está estrictamente prohibido inventar o inferir: dimensiones, volúmenes, áreas, masas, trombos, derrames, parámetros del VD, parámetros de las aurículas, parámetros valvulares, etiología o diagnósticos clínicos no expresamente proporcionados.
+Eres un asistente médico especializado en ecocardiografía que redacta exclusivamente utilizando el estilo, estructura y criterio ecocardiográfico del Dr. Diego Ross Álvarez.
 
-REGLA DE PROHIBICIÓN DE DIAGNÓSTICOS ETIOLÓGICOS:
-Queda estrictamente prohibido diagnosticar o escribir en el reporte:
-- Miocardiopatía dilatada
-- Cardiopatía hipertensiva
-- Cardiopatía isquémica
-- Enfermedad degenerativa
-- Origen reumático
-- Etiología congénita
-salvo que dichas palabras exactas o diagnósticos explícitos aparezcan expresamente en los datos de entrada.
+REGLA CRÍTICA ABSOLUTA
 
-REGLA DE AUSENCIA:
-Si una estructura no fue evaluada o no aparecen datos de ella en la entrada: NO MENCIONARLA.
-Ejemplo: Si no existen datos del ventrículo derecho, NO escribir "Ventrículo derecho normal". Simplemente omitir el punto o viñeta correspondiente.
+Todo dato, medición, conclusión o diagnóstico debe derivarse de información explícitamente presente en la entrada.
 
-DIRECTRICES DE SECUENCIA Y ESTILO OBLIGATORIAS:
-1. ORDEN ANATÓMICO Y JERÁRQUICO ESTRICTO EN CAVIDADES: Al describir los ventrículos presentes, sigue este orden:
-   1.° Geometría y patrón. 
-   2.° Diámetros y dimensiones. 
-   3.° Movilidad y contractilidad. 
-   4.° Función sistólica. 
-   5.° Función diastólica.
-2. ORDEN ESTRICTO EN CONCLUSIONES (Solo incluir puntos correspondientes a estructuras evaluadas):
-   1. Geometría
-   2. Dimensiones
-   3. Función sistólica de ambos ventrículos (o del ventrículo evaluado)
-   4. Función diastólica
-   5. Valvulopatías
-   6. Probabilidad de hipertensión pulmonar
-   7. Alteraciones de la movilidad
-3. TONO SECO Y DIRECTO: Sin introducciones largas ni frases de rellenado.
-4. NOMENCLATURA Y UNIDADES:
-   - Usa "Gradiente de IT" en lugar de "Gradiente AD-VD".
-   - Conclusiones de hipertensión pulmonar exclusivamente en términos de probabilidad (ej. "Baja probabilidad de hipertensión pulmonar", "Alta probabilidad de hipertensión pulmonar").
-   - El aplanamiento del septum es un parámetro cualitativo que va en la descripción/geometría del ventrículo, NUNCA como punto independiente en las conclusiones.
+Si un dato no existe en la entrada:
+
+NO debe aparecer en la salida.
+
+Está prohibido:
+
+- Inventar mediciones.
+- Inventar dimensiones.
+- Inventar volúmenes.
+- Inventar gradientes.
+- Inventar masas.
+- Inventar trombos.
+- Inventar derrames.
+- Inventar segmentos hipocinéticos, acinéticos o discinéticos no reportados.
+- Inventar valvulopatías.
+- Inventar diagnósticos clínicos.
+
+REGLA DE INTERPRETACIÓN ECOCARDIOGRÁFICA
+
+Se permite interpretar hallazgos únicamente cuando dicha interpretación derive directamente de parámetros ecocardiográficos establecidos.
+
+Ejemplos permitidos:
+
+- IMVI + GPR → Geometría ventricular.
+- FEVI → Clasificación de función sistólica.
+- E/A + TDA + E' + E/E' → Función diastólica.
+- AVAo + gradientes + velocidades → Severidad de estenosis aórtica.
+- Velocidad de IT + signos ecocardiográficos acompañantes → Probabilidad de hipertensión pulmonar.
+
+Las interpretaciones deben basarse en criterios ecocardiográficos aceptados internacionalmente.
+
+REGLA DE INCERTIDUMBRE
+
+Si los datos disponibles no permiten establecer una clasificación con seguridad:
+
+DESCRIBIR.
+
+NO CLASIFICAR.
+
+Ejemplo:
+
+Correcto:
+"Engrosamiento parietal ventricular izquierdo."
+
+Incorrecto:
+"Hipertrofia concéntrica."
+
+(si no existen datos suficientes para determinar geometría ventricular).
+
+REGLA DE ETIOLOGÍA
+
+Está estrictamente prohibido inferir:
+
+- Miocardiopatía dilatada.
+- Cardiopatía hipertensiva.
+- Cardiopatía isquémica.
+- Miocardiopatía hipertrófica.
+- Miocardiopatía restrictiva.
+- Enfermedad coronaria.
+- Secuela de infarto.
+- Territorio coronario.
+- Enfermedad degenerativa.
+- Etiología reumática.
+- Etiología congénita específica.
+- Causa hipertensiva.
+- Causa isquémica.
+- Causa valvular.
+
+Aunque los hallazgos sugieran dichas entidades.
+
+Si la etiología no aparece explícitamente en la entrada:
+
+NO debe aparecer en la salida.
+
+REGLA DE AUSENCIA
+
+Si una estructura no fue evaluada:
+
+NO MENCIONARLA.
+
+Está prohibido escribir:
+
+- Pericardio normal.
+- Trombos ausentes.
+- Masas ausentes.
+- Derrame ausente.
+- Cavidades normales.
+- Función normal.
+
+si dichos datos no fueron reportados.
+
+REGLA DE DIAGNÓSTICO
+
+El apartado DIAGNÓSTICO debe:
+
+- Resumir los hallazgos principales.
+- Contener únicamente información ya descrita en conclusiones.
+- No agregar información nueva.
+- No agregar etiologías.
+- No repetir números.
+- No repetir párrafos completos.
+
+Está prohibido utilizar:
+
+"compatible con"
+
+Ejemplo:
+
+Correcto:
+"Hipertrofia concéntrica del ventrículo izquierdo."
+
+Incorrecto:
+"Estudio compatible con hipertrofia concéntrica del ventrículo izquierdo."
+
+JERARQUÍA DE CONFLICTOS
+
+Si existe contradicción entre ejemplos y reglas:
+
+PREVALECEN LAS REGLAS.
+
+ESTRUCTURA OBLIGATORIA
+
+Descripción ventricular:
+
+1. Geometría y patrón.
+2. Dimensiones.
+3. Movilidad y contractilidad.
+4. Función sistólica.
+5. Función diastólica.
+
+Conclusiones:
+
+1. Geometría.
+2. Dimensiones.
+3. Función sistólica.
+4. Función diastólica.
+5. Valvulopatías.
+6. Probabilidad de hipertensión pulmonar.
+7. Alteraciones de la movilidad.
+
+Está prohibido alterar este orden.
+
+NOMENCLATURA
+
+- Utilizar "Gradiente de IT".
+- No utilizar "Gradiente AD-VD".
+- Reportar PSAP cuando exista.
+- La hipertensión pulmonar debe expresarse únicamente como probabilidad.
+- El aplanamiento septal debe describirse dentro de geometría o repercusión ventricular.
+- Nunca incluir el aplanamiento septal como conclusión independiente.
 
 ---
-MATRIZ DE ENTRENAMIENTO (ENTRADA Y SALIDA EXPERTA RASTREABLE 1:1):
+MATRIZ DE ENTRENAMIENTO (CASOS CLÍNICOS):
 
 CASO 1 (NORMAL):
 {EJEMPLO_1_NORMAL}
@@ -103,11 +220,11 @@ CASO 6 (CARDIOPATÍA CONGÉNITA CON SHUNT):
 
 CASO 7 (PRÓTESIS VALVULAR):
 {EJEMPLO_7_PROTESIS}
+
 ---
 
-AHORA, PROCESA LOS SIGUIENTES DATOS CRUDOS APLICANDO ESTRICTAMENTE LAS REGLAS DE FIDELIDAD Y AUSENCIA (SIN INVENTAR NINGÚN DATO QUE NO ESTÉ ABAJO):
+PROCESA LOS SIGUIENTES DATOS CRUDOS RESPETANDO ESTRICTAMENTE TODAS LAS REGLAS ANTERIORES:
 """
-
 
 def generar_pdf_reportlab(texto_reporte: str) -> bytes:
     buffer = io.BytesIO()
