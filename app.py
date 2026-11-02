@@ -38,7 +38,6 @@ CLINICAL_CONFIG = {
         "vtd_ml": (10.0, 600.0),
         "tapse_mm": (5.0, 45.0)
     },
-    # Corrección 5: Reglas de prohibición estructuradas y robustas
     "REGLAS_DE_PROHIBICION": {
         "motilidad_normal": "Prohibido afirmar motilidad normal sin descripción segmentaria explícita.",
         "diastolica_normal": "Prohibido afirmar función diastólica normal o conservada si no existen parámetros suficientes evaluados.",
@@ -251,7 +250,6 @@ def fase_1_5_normalizacion(data: dict) -> dict:
 
     vi = data.get("ventriculo_izquierdo", {})
     if isinstance(vi, dict):
-        # Corrección 1: Nomenclatura corregida a masa_miocardica_g
         for k in ["dtdvi_mm", "dtsvi_mm", "siv_mm", "ppvi_mm", "fevi_porcentaje", "volumen_telediastolico_ml", "volumen_telesistolico_ml", "masa_miocardica_g"]:
             vi[k] = sanitizar_y_convertir_numero(vi.get(k))
         vi["movilidad_anormal_descripcion"] = sanitizar_texto(vi.get("movilidad_anormal_descripcion"))
@@ -329,7 +327,6 @@ def fase_2_motor_ross_determinista(data: dict) -> dict:
     dtdvi = vi.get("dtdvi_mm")
     asc = data.get("paciente", {}).get("asc_m2")
 
-    # Contadores para índice de confianza por módulo
     modulos_stats = {
         "ventriculo_izquierdo": {"total": 3, "presentes": 0},
         "funcion_diastolica": {"total": 5, "presentes": 0},
@@ -337,7 +334,6 @@ def fase_2_motor_ross_determinista(data: dict) -> dict:
         "valvulas": {"total": 4, "presentes": 0}
     }
 
-    # 1. Función Sistólica (con Trazabilidad - Corrección 7)
     if fevi is not None:
         modulos_stats["ventriculo_izquierdo"]["presentes"] += 1
         if fevi >= 52.0:
@@ -357,7 +353,6 @@ def fase_2_motor_ross_determinista(data: dict) -> dict:
     else:
         vi["funcion_sistolica_evaluada"] = None
 
-    # 2. Dilatación Multivariable (con Trazabilidad)
     dilatacion_detectada = False
     evidencia_dil = {}
     if vtd is not None:
@@ -381,7 +376,6 @@ def fase_2_motor_ross_determinista(data: dict) -> dict:
     else:
         vi["alerta_dilatacion"] = None
 
-    # 3. Función Diastólica (Corrección 2: Cero asunciones si faltan datos)
     fd = data.get("funcion_diastolica_bruta", {})
     e_val = fd.get("onda_e_cm_s")
     a_val = fd.get("onda_a_cm_s")
@@ -420,11 +414,9 @@ def fase_2_motor_ross_determinista(data: dict) -> dict:
             "evidencia": evidencia_fd
         })
     else:
-        # Corrección 2: Si no hay datos suficientes, se declara no clasificable
         fd["evaluacion_diastolica"] = "Función diastólica no clasificable con la información disponible."
         limitaciones_del_estudio.append("No se reportaron parámetros suficientes para evaluar función diastólica.")
 
-    # 4. Hemodinámica y PSAP (con Trazabilidad)
     hemo = data.setdefault("hemodinamica_derecha", {})
     grad_it = hemo.get("gradiente_it_pico_mmhg")
     if grad_it is not None:
@@ -447,7 +439,6 @@ def fase_2_motor_ross_determinista(data: dict) -> dict:
         hemo["psap_calculada_mmhg"] = None
         hemo["probabilidad_hap"] = None
 
-    # Valvulas stats
     valv = data.get("valvulas", {})
     for v_key in ["aortica_insuficiencia", "mitral_insuficiencia", "tricuspide_insuficiencia", "pulmonar_insuficiencia"]:
         if valv.get(v_key) is not None:
@@ -459,10 +450,8 @@ def fase_2_motor_ross_determinista(data: dict) -> dict:
     if vi.get("movilidad_anormal_descripcion") is None:
         limitaciones_del_estudio.append("No se documentó movilidad segmentaria explícita.")
 
-    # 5. Generación de Conclusiones Estrictas (7 Puntos)
     conclusiones = []
     
-    # Punto 1: Geometría y Volúmenes
     if dtdvi is not None or vtd is not None:
         geo_partes = []
         if dtdvi is not None: geo_partes.append(f"DTDVI: {dtdvi} mm")
@@ -474,7 +463,6 @@ def fase_2_motor_ross_determinista(data: dict) -> dict:
     else:
         conclusiones.append("Ventrículo izquierdo sin datos volumétricos o dimensionales reportados en el estudio.")
 
-    # Punto 2: Aurícula Izquierda
     ai = data.get("auricula_izquierda", {})
     diam_ap = ai.get("diametro_ap_mm")
     lavi_val = ai.get("volumen_indexado_ml_m2")
@@ -491,19 +479,16 @@ def fase_2_motor_ross_determinista(data: dict) -> dict:
     else:
         conclusiones.append("Aurícula izquierda sin mediciones cuantitativas disponibles para análisis.")
 
-    # Punto 3: Función Sistólica
     if vi.get("funcion_sistolica_evaluada"):
         conclusiones.append(vi["funcion_sistolica_evaluada"])
     else:
         conclusiones.append("Función sistólica global no valorable por ausencia de parámetros de eyección.")
 
-    # Punto 4: Función Diastólica
     if fd.get("evaluacion_diastolica"):
         conclusiones.append(fd["evaluacion_diastolica"])
     else:
         conclusiones.append("Función diastólica no evaluada por insuficiencia de flujos Doppler reportados.")
 
-    # Punto 5: Valvulopatías
     valv_txt = []
     if valv.get("mitral_insuficiencia"): valv_txt.append(f"Insuficiencia mitral {valv['mitral_insuficiencia']}")
     if valv.get("aortica_insuficiencia"): valv_txt.append(f"Insuficiencia aórtica {valv['aortica_insuficiencia']}")
@@ -512,13 +497,11 @@ def fase_2_motor_ross_determinista(data: dict) -> dict:
     else:
         conclusiones.append("Evaluación valvular sin reportes específicos de lesiones o insuficiencias en la fuente.")
 
-    # Punto 6: Hipertensión Pulmonar
     if hemo.get("probabilidad_hap"):
         conclusiones.append(hemo["probabilidad_hap"])
     else:
         conclusiones.append("Sin elementos hemodinámicos derechos suficientes para estimar probabilidad de hipertensión pulmonar.")
 
-    # Punto 7: Movilidad Segmentaria
     mov_desc = vi.get("movilidad_anormal_descripcion")
     if mov_desc:
         conclusiones.append(f"Alteraciones de la movilidad segmentaria: {mov_desc}.")
@@ -529,7 +512,6 @@ def fase_2_motor_ross_determinista(data: dict) -> dict:
         conclusiones.append("")
     data["conclusiones_deterministicas"] = conclusiones[:7]
 
-    # Corrección 8: Índice de confianza por módulo
     indice_confianza = {}
     for mod, stats in modulos_stats.items():
         if stats["total"] > 0:
@@ -549,7 +531,7 @@ def fase_2_motor_ross_determinista(data: dict) -> dict:
 
 
 # ====================================================================
-# FASE 3: IA REDACTORA CLÍNICA CONTEXTUAL
+# FASE 3: IA REDACTORA CLÍNICA CONTEXTUAL (ACTUALIZADO A GEMINI 3.8 FLASH)
 # ====================================================================
 PROMPT_FASE_3_REDACCION = """
 Eres un médico cardiólogo especialista en ecocardiografía que redacta exclusivamente utilizando el estilo formal, sobrio, elegante y clínico del Dr. Diego Ross Álvarez.
@@ -580,7 +562,7 @@ def fase_3_ia_redactora(client: genai.Client, api_key: str, data: dict) -> Dict[
     try:
         config_gen = types.GenerateContentConfig(temperature=0.1)
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-3.8-flash",
             contents=[
                 PROMPT_FASE_3_REDACCION,
                 f"HECHOS CLÍNICOS DEL MOTOR ROSS:\n{json.dumps(data, ensure_ascii=False, indent=2)}"
@@ -609,10 +591,9 @@ def fase_3_ia_redactora(client: genai.Client, api_key: str, data: dict) -> Dict[
 
 
 # ====================================================================
-# FASE 3.5: AUDITOR CLÍNICO AUTOMÁTICO (CORRECCIÓN 6)
+# FASE 3.5: AUDITOR CLÍNICO AUTOMÁTICO (ACTUALIZADO A GEMINI 3.8 FLASH)
 # ====================================================================
 def fase_3_5_auditor_clinico(client: genai.Client, api_key: str, data: dict, resultado_fase_3: dict) -> Dict[str, Any]:
-    """Audita de forma automática si la narrativa viola prohibiciones, contradice al Motor Ross o incumple hallazgos."""
     prompt_auditor = """
 Eres un Auditor Clínico Senior de software médico. Tu tarea es verificar si la narrativa generada por la IA redactora cumple estrictamente con los hechos del Motor Ross.
 
@@ -627,7 +608,7 @@ Si hay discrepancias graves o violaciones de reglas, responde con un objeto JSON
     try:
         config_gen = types.GenerateContentConfig(temperature=0.0)
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-3.8-flash",
             contents=[
                 prompt_auditor,
                 f"HECHOS DEL MOTOR ROSS:\n{json.dumps(data.get('hechos_clinicos', {}), ensure_ascii=False)}\n\nNARRATIVA GENERADA:\n{json.dumps(resultado_fase_3, ensure_ascii=False)}"
@@ -638,7 +619,6 @@ Si hay discrepancias graves o violaciones de reglas, responde con un objeto JSON
         if "APROBADO" in veredicto.upper():
             return {"aprobado": True, "comentario": "Auditoría clínica superada con éxito."}
         else:
-            # Si el auditor detecta fallos, regeneramos una vez aplicando corrección forzada
             return {"aprobado": False, "comentario": veredicto}
     except Exception:
         return {"aprobado": True, "comentario": "Auditoría omitida por excepción técnica, aprobada por defecto."}
@@ -741,9 +721,9 @@ if uploaded_file is not None:
                         client = genai.Client(api_key=api_key)
                         config_gen = types.GenerateContentConfig(temperature=0.0)
 
-                        # FASE 1: Extracción Pura
+                        # FASE 1: Extracción Pura (Actualizado a gemini-3.8-flash)
                         response_f1 = client.models.generate_content(
-                            model="gemini-2.5-flash",
+                            model="gemini-3.8-flash",
                             contents=[PROMPT_FASE_1_EXTRACCION, f"DATOS CRUDOS:\n{datos_crudos}"],
                             config=config_gen,
                         )
@@ -799,7 +779,6 @@ if st.session_state["reporte_hibrido"]:
         status_color = "🟢" if aud["aprobado"] else "🟠"
         st.markdown(f'<div class="audit-box">{status_color} <b>Auditor Clínico Automático (Fase 3.5):</b> {aud["comentario"]}</div>', unsafe_allow_html=True)
 
-    # Mostrar índice de confianza e información interna de auditoría para el médico
     with st.expander("🔍 Ver Trazabilidad y Confianza Clínica (Uso Médico)"):
         hechos_dbg = st.session_state["reporte_hibrido"].get("hechos_clinicos", {})
         st.write("**Índice de Confianza por Módulo:**", hechos_dbg.get("indice_confianza_por_modulo", {}))
@@ -850,7 +829,6 @@ if st.session_state["reporte_hibrido"]:
             txt = st.text_input("VTDVI (ml)", value=str(val) if val is not None else "")
             vi["volumen_telediastolico_ml"] = float(txt) if txt.strip() else None
 
-        # Recalcular Motor Ross en tiempo real ante ediciones manuales
         data = fase_2_motor_ross_determinista(data)
 
         st.markdown("##### 📝 Narrativa Clínica Descriptiva (IA Redactora Contextual)")
@@ -876,7 +854,6 @@ if st.session_state["reporte_hibrido"]:
         )
 
     st.markdown("---")
-    # FASE 5: PDF INSTITUCIONAL
     if st.button("📥 Generar y Descargar PDF Institucional Oficial v7.0", type="primary", use_container_width=True):
         pdf_bytes = generar_pdf_reportlab(
             data, 
