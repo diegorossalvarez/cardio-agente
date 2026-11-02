@@ -95,7 +95,7 @@ st.markdown("""
 
 st.markdown("""
     <div class="clinic-header">
-        <h2 style='margin:0; font-size: 24px;'>🫀 CardioAgente - Producción Hardened v7.7</h2>
+        <h2 style='margin:0; font-size: 24px;'>🫀 CardioAgente - Producción v7.8 (Anti-Congelamiento)</h2>
         <p style='margin:5px 0 0 0; font-size: 14px;'>Dr. Diego Ross Álvarez | Cardiólogo - Electrofisiólogo | Céd. Esp. 12883155</p>
     </div>
 """, unsafe_allow_html=True)
@@ -104,11 +104,11 @@ with st.sidebar:
     st.markdown("### ⚙️ Configuración")
     api_key = st.text_input("Gemini API Key", type="password")
     st.markdown("---")
-    st.info("Arquitectura v7.7:\n1. Persistencia en Disco (JSON)\n2. Validación Semántica de JSON\n3. Recall Clínico Real\n4. Motor Ross Determinista\n5. Auditoría de Producción")
+    st.info("Arquitectura v7.8:\n1. Validadores Independientes por Fase\n2. Exclusión de Reintentos Sintácticos\n3. Telemetría de Fase Activa Visible\n4. Auditor de Texto Plano\n5. Log Detallado de Excepciones")
 
 
 # ====================================================================
-# OCR ROBUSTO ADAPTATIVO
+# OCR ADAPTATIVO
 # ====================================================================
 def extraer_pdf_adaptativo(file_bytes) -> Tuple[str, Dict[str, Any]]:
     texto_completo = ""
@@ -136,30 +136,63 @@ def extraer_pdf_adaptativo(file_bytes) -> Tuple[str, Dict[str, Any]]:
 
 
 # ====================================================================
-# VALIDACIÓN SEMÁNTICA Y SINTÁCTICA DE RESPUESTA GEMINI
+# VALIDADORES INDEPENDIENTES POR FASE (PROBLEMA 1 & 6)
 # ====================================================================
-def validar_respuesta_gemini(texto_respuesta: str) -> str:
+def validar_json_extraccion(texto_respuesta: str) -> Tuple[bool, str, Optional[dict]]:
     if not texto_respuesta or not texto_respuesta.strip():
-        return "Respuesta vacía del modelo."
+        return False, "Respuesta vacía en Extracción.", None
     
     texto_limpio = texto_respuesta.strip()
     if not texto_limpio.endswith("}") and not texto_limpio.endswith("]"):
-        return "Respuesta truncada del modelo (No finaliza con cierre de estructura JSON)."
-    
-    if texto_limpio.count("{") != texto_limpio.count("}"):
-        return "JSON incompleto / Llaves desbalanceadas detectadas."
+        return False, "JSON de extracción truncado.", None
         
     try:
         parsed = json.loads(texto_limpio)
-        if not isinstance(parsed, dict) or "paciente" not in parsed or "ventriculo_izquierdo" not in parsed:
-            return "JSON semánticamente incompleto (Faltan secciones estructurales clave)."
-    except Exception:
-        return "Error al parsear la estructura JSON devuelta."
+        if not isinstance(parsed, dict):
+            return False, "El JSON de extracción no es un diccionario válido.", None
         
-    return "OK"
+        secciones_requeridas = ["paciente", "ventriculo_izquierdo", "auricula_izquierda", "ventriculo_derecho"]
+        for sec in secciones_requeridas:
+            if sec not in parsed:
+                return False, f"Falta la sección obligatoria '{sec}' en extracción.", None
+        return True, "OK", parsed
+    except Exception as e:
+        return False, f"Error de parseo JSON en extracción: {str(e)}", None
 
 
+def validar_json_redaccion(texto_respuesta: str) -> Tuple[bool, str, Optional[dict]]:
+    if not texto_respuesta or not texto_respuesta.strip():
+        return False, "Respuesta vacía en Redacción.", None
+    
+    texto_limpio = texto_respuesta.strip()
+    if not texto_limpio.endswith("}") and not texto_limpio.endswith("]"):
+        return False, "JSON de redacción truncado.", None
+        
+    try:
+        parsed = json.loads(texto_limpio)
+        if not isinstance(parsed, dict):
+            return False, "El JSON de redacción no es un diccionario válido.", None
+            
+        secciones_redaccion = ["narrativa_descriptiva", "conclusiones_redactadas", "diagnostico_redactado"]
+        for sec in secciones_redaccion:
+            if sec not in parsed:
+                return False, f"Falta la sección obligatoria '{sec}' en redacción.", None
+        return True, "OK", parsed
+    except Exception as e:
+        return False, f"Error de parseo JSON en redacción: {str(e)}", None
+
+
+def validar_respuesta_auditor(texto_respuesta: str) -> Tuple[bool, str]:
+    if not texto_respuesta or not texto_respuesta.strip():
+        return False, "Respuesta vacía del Auditor."
+    return True, texto_respuesta.strip()
+
+
+# ====================================================================
+# LLAMADA SEGURA DIFERENCIANDO ERRORES (PROBLEMA 2)
+# ====================================================================
 def llamada_segura_gemini(client, model_name: str, contents: list, config_gen: types.GenerateContentConfig, max_retries=3):
+    t_inicio = time.time()
     delay = 2
     for intento in range(max_retries):
         try:
@@ -168,19 +201,19 @@ def llamada_segura_gemini(client, model_name: str, contents: list, config_gen: t
                 contents=contents,
                 config=config_gen,
             )
-            val_estado = validar_respuesta_gemini(response.text)
-            if val_estado != "OK":
-                raise ValueError(f"Error estructural en Gemini: {val_estado}")
-            return response
+            duracion = round(time.time() - t_inicio, 3)
+            return response, duracion
         except Exception as e:
             error_str = str(e)
-            if "503" in error_str or "UNAVAILABLE" in error_str or "high demand" in error_str.lower() or "truncada" in error_str.lower() or "semánticamente" in error_str.lower():
+            # REINTENTAR ÚNICAMENTE CUANDO EXISTA 503, UNAVAILABLE, RATE LIMIT O TIMEOUT REAL
+            if "503" in error_str or "UNAVAILABLE" in error_str or "high demand" in error_str.lower() or "rate limit" in error_str.lower() or "timeout" in error_str.lower():
                 if intento < max_retries - 1:
                     time.sleep(delay)
                     delay *= 2
                     continue
             raise e
-    raise Exception(f"Error crítico en modelo {model_name} tras reintentos.")
+    duracion = round(time.time() - t_inicio, 3)
+    raise Exception(f"Error de red/modelo en {model_name} tras reintentos (Duración: {duracion}s).")
 
 
 # ====================================================================
@@ -257,6 +290,18 @@ ESTRUCTURA DE SALIDA OBLIGATORIA (JSON PURO SIN MARKDOWN):
     "cava_inferior_diametro_mm": null,
     "cava_colapso_porcentaje": null
   }
+}
+"""
+
+PROMPT_FASE_3_REDACCION = """
+Eres un médico cardiólogo especialista en ecocardiografía que redacta exclusivamente utilizando el estilo formal, sobrio, elegante y clínico del Dr. Diego Ross Álvarez.
+
+Recibirás un objeto JSON con los hechos clínicos estructurados. Redacta la descripción ecocardiográfica institucional, la sección de conclusiones y el diagnóstico final.
+Devuelve un objeto JSON puro (sin markdown) con esta estructura estricta:
+{
+  "narrativa_descriptiva": "...",
+  "conclusiones_redactadas": ["...", "...", "...", "...", "...", "...", "..."],
+  "diagnostico_redactado": "..."
 }
 """
 
@@ -462,31 +507,35 @@ def fase_2_motor_ross_determinista(data: dict) -> dict:
 
 
 # ====================================================================
-# REDACCIÓN Y AUDITORÍA
+# REDACCIÓN Y AUDITORÍA INDEPENDIENTES (PROBLEMA 3 & 6)
 # ====================================================================
 def fase_3_ia_redactora(client: genai.Client, api_key: str, data: dict) -> Dict[str, Any]:
-    try:
-        config_gen = types.GenerateContentConfig(temperature=0.1)
-        response = llamada_segura_gemini(client, "gemini-3.8-flash", ["Redacta informe cardiológico clínico formal estructurado en JSON basado estrictamente en los hechos:", json.dumps(data, ensure_ascii=False)], config_gen)
-        texto_resp = re.sub(r"^```json\s*", "", response.text.strip())
-        texto_resp = re.sub(r"^```\s*", "", texto_resp)
-        texto_resp = re.sub(r"\s*```$", "", texto_resp)
-        return json.loads(texto_resp)
-    except Exception:
-        return {
-            "narrativa_descriptiva": "Estudio analizado por Motor Ross.",
-            "conclusiones_redactadas": data.get("conclusiones_deterministicas", [""]*7),
-            "diagnostico_redactado": "Ecocardiograma transtorácico evaluado."
-        }
+    response, duracion = llamada_segura_gemini(
+        client=client,
+        model_name="gemini-3.8-flash",
+        contents=[PROMPT_FASE_3_REDACCION, json.dumps(data, ensure_ascii=False)],
+        config_gen=types.GenerateContentConfig(temperature=0.1)
+    )
+    texto_resp = re.sub(r"^```json\s*", "", response.text.strip())
+    texto_resp = re.sub(r"^```\s*", "", texto_resp)
+    texto_resp = re.sub(r"\s*```$", "", texto_resp)
+    
+    valido, mensaje, parsed = validar_json_redaccion(texto_resp)
+    if not valido:
+        raise ValueError(f"Fallo en validación de Redacción: {mensaje}")
+    return parsed
 
 
 def fase_3_5_auditor_clinico(client: genai.Client, api_key: str, data: dict, resultado_fase_3: dict) -> Dict[str, Any]:
-    try:
-        config_gen = types.GenerateContentConfig(temperature=0.0)
-        response = llamada_segura_gemini(client, "gemini-3.8-flash", ["Verifica consistencia y responde 'APROBADO' si concuerda:", json.dumps(resultado_fase_3, ensure_ascii=False)], config_gen)
-        return {"aprobado": "APROBADO" in response.text.upper(), "comentario": response.text.strip()}
-    except Exception:
-        return {"aprobado": True, "comentario": "Auditoría omitida por excepción técnica."}
+    response, duracion = llamada_segura_gemini(
+        client=client,
+        model_name="gemini-3.8-flash",
+        contents=["Eres auditor clínico. Verifica consistencia y responde 'APROBADO' o 'OBSERVACIONES' con texto plano.", json.dumps(resultado_fase_3, ensure_ascii=False)],
+        config_gen=types.GenerateContentConfig(temperature=0.0)
+    )
+    valido, texto_auditor = validar_respuesta_auditor(response.text)
+    aprobado = "APROBADO" in texto_auditor.upper()
+    return {"aprobado": aprobado, "comentario": texto_auditor}
 
 
 def generar_pdf_reportlab(data: dict, narrativa: str, conclusiones: List[str], diagnostico: str) -> bytes:
@@ -513,7 +562,7 @@ def generar_pdf_reportlab(data: dict, narrativa: str, conclusiones: List[str], d
 
 
 # ====================================================================
-# APLICACIÓN STREAMLIT CON HISTORIAL PERSISTENTE EN DISCO
+# APLICACIÓN STREAMLIT CON TELEMETRÍA DE FASE VISIBLE Y LOG DETALLADO
 # ====================================================================
 if "reporte_hibrido" not in st.session_state:
     st.session_state["reporte_hibrido"] = None
@@ -521,7 +570,6 @@ if "reporte_hibrido" not in st.session_state:
     st.session_state["conclusiones_clinicas"] = [""] * 7
     st.session_state["diagnostico_clinico"] = ""
 
-# Cargar historial desde disco al iniciar
 historial_lote = cargar_historial_disco()
 
 col1, col2 = st.columns([1, 1], gap="medium")
@@ -539,66 +587,101 @@ if uploaded_file is not None:
             st.warning("⚠️ Ingrese su API Key en el panel lateral.")
     else:
         with col1:
-            if st.button("🚀 Ejecutar Auditoría v7.7", use_container_width=True):
-                with st.spinner("Ejecutando auditoría con persistencia local..."):
-                    try:
-                        tiempos = {}
-                        t_inicio_total = time.time()
+            if st.button("🚀 Ejecutar Auditoría v7.8 (Anti-Bloqueo)", use_container_width=True):
+                # FASE ACTUAL VISIBLE EN TIEMPO REAL (PROBLEMA 5)
+                status_placeholder = st.empty()
+                log_detallado = []
+                
+                try:
+                    t_inicio_total = time.time()
 
-                        t0 = time.time()
-                        datos_crudos_ocr, reporte_ocr = extraer_pdf_adaptativo(uploaded_file.read())
-                        tiempos["OCR"] = round(time.time() - t0, 3)
+                    # FASE 1: OCR
+                    status_placeholder.info("🔄 Fase actual: **OCR** (Extrayendo texto del PDF...)")
+                    t0 = time.time()
+                    file_bytes = uploaded_file.read()
+                    datos_crudos_ocr, reporte_ocr = extraer_pdf_adaptativo(file_bytes)
+                    t_ocr = round(time.time() - t0, 3)
+                    log_detallado.append({"fase": "OCR", "duracion": t_ocr, "estado": "OK"})
 
-                        client = genai.Client(api_key=api_key)
-                        config_gen = types.GenerateContentConfig(temperature=0.0)
+                    client = genai.Client(api_key=api_key)
+                    config_gen = types.GenerateContentConfig(temperature=0.0)
 
-                        t0 = time.time()
-                        prompt_ext = f"{PROMPT_FASE_1_EXTRACCION}\nDATOS CRUDOS DEL INFORMANTE:\n{datos_crudos_ocr}"
-                        response_f1 = llamada_segura_gemini(client, "gemini-3.8-flash", [prompt_ext], config_gen)
-                        tiempos["Extracción"] = round(time.time() - t0, 3)
+                    # FASE 2: Extracción Gemini
+                    status_placeholder.info("🔄 Fase actual: **Extracción** (Procesando con Gemini 3.8 Flash...)")
+                    t0 = time.time()
+                    prompt_ext = f"{PROMPT_FASE_1_EXTRACCION}\nDATOS CRUDOS DEL INFORMANTE:\n{datos_crudos_ocr}"
+                    
+                    response_f1, dur_ext = llamada_segura_gemini(
+                        client=client,
+                        model_name="gemini-3.8-flash",
+                        contents=[prompt_ext],
+                        config_gen=config_gen
+                    )
+                    
+                    texto_resp = re.sub(r"^```json\s*", "", response_f1.text.strip())
+                    texto_resp = re.sub(r"^```\s*", "", texto_resp)
+                    texto_resp = re.sub(r"\s*```$", "", texto_resp)
 
-                        texto_resp = re.sub(r"^```json\s*", "", response_f1.text.strip())
-                        texto_resp = re.sub(r"^```\s*", "", texto_resp)
-                        texto_resp = re.sub(r"\s*```$", "", texto_resp)
-                        json_crudo = json.loads(texto_resp)
+                    valido_ext, msg_ext, json_crudo = validar_json_extraccion(texto_resp)
+                    if not valido_ext:
+                        raise ValueError(f"Fallo de validación en Extracción: {msg_ext}")
+                    
+                    log_detallado.append({"fase": "Extracción", "duracion": dur_ext, "estado": "OK"})
 
-                        t0 = time.time()
-                        json_normalizado = fase_1_5_normalizacion(json_crudo)
-                        tiempos["Normalización"] = round(time.time() - t0, 3)
+                    # FASE 3: Normalización
+                    status_placeholder.info("🔄 Fase actual: **Normalización** (Sanitizando y convirtiendo datos...)")
+                    t0 = time.time()
+                    json_normalizado = fase_1_5_normalizacion(json_crudo)
+                    recall_res = calcular_recall_clinico(json_normalizado, datos_crudos_ocr)
+                    t_norm = round(time.time() - t0, 3)
+                    log_detallado.append({"fase": "Normalización", "duracion": t_norm, "estado": "OK"})
 
-                        recall_res = calcular_recall_clinico(json_normalizado, datos_crudos_ocr)
+                    # FASE 4: Motor Ross
+                    status_placeholder.info("🔄 Fase actual: **Motor Ross** (Ejecutando lógica determinista...)")
+                    t0 = time.time()
+                    json_procesado = fase_2_motor_ross_determinista(json_normalizado)
+                    st.session_state["reporte_hibrido"] = json_procesado
+                    t_ross = round(time.time() - t0, 3)
+                    log_detallado.append({"fase": "Motor Ross", "duracion": t_ross, "estado": "OK"})
 
-                        t0 = time.time()
-                        json_procesado = fase_2_motor_ross_determinista(json_normalizado)
-                        tiempos["Motor Ross"] = round(time.time() - t0, 3)
-                        st.session_state["reporte_hibrido"] = json_procesado
+                    # FASE 5: Redacción
+                    status_placeholder.info("🔄 Fase actual: **Redacción** (Generando informe formal con IA...)")
+                    t0 = time.time()
+                    resultado_redaccion = fase_3_ia_redactora(client, api_key, json_procesado)
+                    t_red = round(time.time() - t0, 3)
+                    log_detallado.append({"fase": "Redacción", "duracion": t_red, "estado": "OK"})
 
-                        t0 = time.time()
-                        res_red = fase_3_ia_redactora(client, api_key, json_procesado)
-                        tiempos["Redacción"] = round(time.time() - t0, 3)
+                    # FASE 6: Auditoría
+                    status_placeholder.info("🔄 Fase actual: **Auditoría** (Verificando consistencia clínica...)")
+                    t0 = time.time()
+                    resultado_auditoria = fase_3_5_auditor_clinico(client, api_key, json_procesado, resultado_redaccion)
+                    t_aud = round(time.time() - t0, 3)
+                    log_detallado.append({"fase": "Auditoría", "duracion": t_aud, "estado": "OK"})
 
-                        t0 = time.time()
-                        res_aud = fase_3_5_auditor_clinico(client, api_key, json_procesado, res_red)
-                        tiempos["Auditoría"] = round(time.time() - t0, 3)
+                    st.session_state["narrativa_clinica"] = resultado_redaccion.get("narrativa_descriptiva", "")
+                    st.session_state["conclusiones_clinicas"] = resultado_redaccion.get("conclusiones_redactadas", json_procesado.get("conclusiones_deterministicas"))
+                    st.session_state["diagnostico_clinico"] = resultado_redaccion.get("diagnostico_redactado", "")
 
-                        tiempos["Total"] = round(time.time() - t_inicio_total, 3)
+                    tiempo_total = round(time.time() - t_inicio_total, 3)
 
-                        log_estudio = {
-                            "fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            "recall_pct": recall_res["recall_clinico_pct"],
-                            "tiempo_total": tiempos["Total"],
-                            "recall_res": recall_res,
-                            "reporte_ocr": reporte_ocr
-                        }
-                        
-                        # Guardar persistente en disco
-                        historial_lote.append(log_estudio)
-                        guardar_historial_disco(historial_lote)
-                        st.session_state["ultimo_estudio"] = log_estudio
+                    log_estudio = {
+                        "fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "recall_pct": recall_res["recall_clinico_pct"],
+                        "tiempo_total": tiempo_total,
+                        "recall_res": recall_res,
+                        "reporte_ocr": reporte_ocr,
+                        "log_detallado": log_detallado
+                    }
+                    
+                    historial_lote.append(log_estudio)
+                    guardar_historial_disco(historial_lote)
+                    st.session_state["ultimo_estudio"] = log_estudio
 
-                        st.success(f"¡Auditoría completada en {tiempos['Total']}s (Recall Clínico: {recall_res['recall_clinico_pct']}%) y guardada en disco!")
-                    except Exception as e:
-                        st.error(f"Error crítico: {str(e)}")
+                    status_placeholder.success(f"¡Auditoría v7.8 completada con éxito en {tiempo_total}s (Recall Clínico: {recall_res['recall_clinico_pct']}%)!")
+                except Exception as e:
+                    status_placeholder.error(f"❌ Error crítico en ejecución:")
+                    st.error(f"Detalle del fallo: {str(e)}")
+                    st.code(json.dumps(log_detallado, indent=2, ensure_ascii=False), language="json")
 
 # ====================================================================
 # CONSOLA DE AUDITORÍA Y ESTADÍSTICAS PERSISTENTES
@@ -606,10 +689,11 @@ if uploaded_file is not None:
 if st.session_state["reporte_hibrido"]:
     st.markdown("---")
     
-    with st.expander("🛠️ CONSOLA DE AUDITORÍA Y RECALL CLÍNICO v7.7", expanded=True):
+    with st.expander("🛠️ CONSOLA DE AUDITORÍA Y TRAZA DETALLADA v7.8", expanded=True):
         ultimo = st.session_state.get("ultimo_estudio", {})
         recall_d = ultimo.get("recall_res", {})
         ocr_d = ultimo.get("reporte_ocr", {})
+        traza = ultimo.get("log_detallado", [])
 
         st.markdown("### 🎯 Evaluación de Recall Clínico Real")
         c1, c2, c3 = st.columns(3)
@@ -619,12 +703,13 @@ if st.session_state["reporte_hibrido"]:
 
         st.info(f"**Calificación de Extracción:** {recall_d.get('calificacion_recall', 'N/D')}")
 
-        if ocr_d.get("alertas_ocr"):
-            for alt in ocr_d["alertas_ocr"]:
-                st.warning(alt)
+        if traza:
+            st.markdown("---")
+            st.markdown("### ⏱️ Trazabilidad de Duración por Fase")
+            st.table(traza)
 
         st.markdown("---")
-        st.markdown("### 📊 Historial AcUMulado en Disco (Lote Real)")
+        st.markdown("### 📊 Historial Acumulado en Disco (Lote Real)")
         historial_actual = cargar_historial_disco()
         if historial_actual:
             prom_rec = round(sum(h["recall_pct"] for h in historial_actual) / len(historial_actual), 1)
@@ -633,15 +718,7 @@ if st.session_state["reporte_hibrido"]:
             st.write(f"- **Promedio de Recall Clínico Histórico:** `{prom_rec}%`")
             st.write(f"- **Promedio de Tiempo Total de Procesamiento:** `{prom_t} s`")
 
-        st.markdown("---")
-        st.markdown("### 📋 Detalle de Variables Detectadas vs Recuperadas")
-        detalle = recall_d.get("detalle_variables", [])
-        if detalle:
-            st.table(detalle)
-        else:
-            st.info("No se detectaron variables clave suficientes en el OCR para este estudio.")
-
-    st.markdown("#### ✏️ 2. Panel de Validación Médica v7.7")
+    st.markdown("#### ✏️ 2. Panel de Validación Médica v7.8")
     data = st.session_state["reporte_hibrido"]
 
     with st.container():
@@ -656,6 +733,6 @@ if st.session_state["reporte_hibrido"]:
         st.session_state["narrativa_clinica"] = st.text_area("Narrativa:", value=st.session_state["narrativa_clinica"], height=120)
 
     st.markdown("---")
-    if st.button("📥 Generar PDF Institucional v7.7", type="primary", use_container_width=True):
+    if st.button("📥 Generar PDF Institucional v7.8", type="primary", use_container_width=True):
         pdf_bytes = generar_pdf_reportlab(data, st.session_state["narrativa_clinica"], st.session_state["conclusiones_clinicas"], "Ecocardiograma valorado.")
-        st.download_button("💾 Descargar PDF", data=pdf_bytes, file_name="Reporte_Ecocardiograma_v7.7.pdf", mime="application/pdf", use_container_width=True)
+        st.download_button("💾 Descargar PDF", data=pdf_bytes, file_name="Reporte_Ecocardiograma_v7.8.pdf", mime="application/pdf", use_container_width=True)
