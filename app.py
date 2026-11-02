@@ -2,6 +2,7 @@ import io
 import json
 import os
 import re
+import threading
 import time
 from datetime import datetime
 from typing import Optional, Dict, Any, List, Tuple
@@ -95,7 +96,7 @@ st.markdown("""
 
 st.markdown("""
     <div class="clinic-header">
-        <h2 style='margin:0; font-size: 24px;'>🫀 CardioAgente - Producción v7.8 (Anti-Congelamiento)</h2>
+        <h2 style='margin:0; font-size: 24px;'>🫀 CardioAgente - Producción v7.9 (Anti-Congelamiento & Timeout)</h2>
         <p style='margin:5px 0 0 0; font-size: 14px;'>Dr. Diego Ross Álvarez | Cardiólogo - Electrofisiólogo | Céd. Esp. 12883155</p>
     </div>
 """, unsafe_allow_html=True)
@@ -104,11 +105,11 @@ with st.sidebar:
     st.markdown("### ⚙️ Configuración")
     api_key = st.text_input("Gemini API Key", type="password")
     st.markdown("---")
-    st.info("Arquitectura v7.8:\n1. Validadores Independientes por Fase\n2. Exclusión de Reintentos Sintácticos\n3. Telemetría de Fase Activa Visible\n4. Auditor de Texto Plano\n5. Log Detallado de Excepciones")
+    st.info("Arquitectura v7.9:\n1. Timeout Real por Llamada y Fase\n2. Telemetría de Latencia y Tokens\n3. Alerta y Gestión de OCR Masivo\n4. Reducción de Payload de Redacción\n5. Ranking Automático de Cuellos de Botella")
 
 
 # ====================================================================
-# OCR ADAPTATIVO
+# OCR ADAPTATIVO CON GESTIÓN DE TAMAÑO (PUNTO 7)
 # ====================================================================
 def extraer_pdf_adaptativo(file_bytes) -> Tuple[str, Dict[str, Any]]:
     texto_completo = ""
@@ -125,18 +126,25 @@ def extraer_pdf_adaptativo(file_bytes) -> Tuple[str, Dict[str, Any]]:
 
     caracteres = len(texto_completo)
     lineas = len(texto_completo.splitlines())
+    tokens_estimados = caracteres // 4
     alertas_ocr = []
 
     if caracteres > 35000:
-        alertas_ocr.append("⚠️ Advertencia: OCR excesivamente largo (>35,000 caracteres).")
-    if caracteres < 100 or lineas < 5:
-        alertas_ocr.append("⚠️ El PDF podría contener únicamente imágenes o tablas no interpretables.")
+        alertas_ocr.append(f"🚨 ALERTA CRÍTICA OCR MASIVO: {caracteres} caracteres (~{tokens_estimados} tokens estimados). Alto riesgo de latencia extrema y degradación de atención.")
+    elif caracteres < 100 or lineas < 5:
+        alertas_ocr.append("⚠️ Advertencia: El PDF contiene texto insuficiente o puede ser una imagen escaneada no interpretable.")
 
-    return texto_completo, {"paginas": total_paginas, "caracteres": caracteres, "lineas": lineas, "alertas_ocr": alertas_ocr}
+    return texto_completo, {
+        "paginas": total_paginas,
+        "caracteres": caracteres,
+        "lineas": lineas,
+        "tokens_estimados": tokens_estimados,
+        "alertas_ocr": alertas_ocr
+    }
 
 
 # ====================================================================
-# VALIDADORES INDEPENDIENTES POR FASE (PROBLEMA 1 & 6)
+# VALIDADORES INDEPENDIENTES
 # ====================================================================
 def validar_json_extraccion(texto_respuesta: str) -> Tuple[bool, str, Optional[dict]]:
     if not texto_respuesta or not texto_respuesta.strip():
@@ -189,35 +197,58 @@ def validar_respuesta_auditor(texto_respuesta: str) -> Tuple[bool, str]:
 
 
 # ====================================================================
-# LLAMADA SEGURA DIFERENCIANDO ERRORES (PROBLEMA 2)
+# LLAMADA SEGURA CON TIMEOUT REAL (PUNTO 1 Y 2)
 # ====================================================================
-def llamada_segura_gemini(client, model_name: str, contents: list, config_gen: types.GenerateContentConfig, max_retries=3):
+def llamada_segura_gemini(client, model_name: str, contents: list, config_gen: types.GenerateContentConfig, max_retries=3, timeout_segundos=25):
     t_inicio = time.time()
-    delay = 2
-    for intento in range(max_retries):
+    
+    prompt_texto = str(contents)
+    tam_prompt = len(prompt_texto)
+    tokens_prompt = tam_prompt // 4
+
+    resultado_contenedor = {}
+
+    def worker():
         try:
-            response = client.models.generate_content(
+            resp = client.models.generate_content(
                 model=model_name,
                 contents=contents,
                 config=config_gen,
             )
-            duracion = round(time.time() - t_inicio, 3)
-            return response, duracion
-        except Exception as e:
-            error_str = str(e)
-            # REINTENTAR ÚNICAMENTE CUANDO EXISTA 503, UNAVAILABLE, RATE LIMIT O TIMEOUT REAL
-            if "503" in error_str or "UNAVAILABLE" in error_str or "high demand" in error_str.lower() or "rate limit" in error_str.lower() or "timeout" in error_str.lower():
-                if intento < max_retries - 1:
-                    time.sleep(delay)
-                    delay *= 2
-                    continue
-            raise e
+            resultado_contenedor["response"] = resp
+        except Exception as ex:
+            resultado_contenedor["exception"] = ex
+
+    hilo = threading.Thread(target=worker)
+    hilo.start()
+    hilo.join(timeout=timeout_segundos)
+
+    if hilo.is_alive():
+        duracion = round(time.time() - t_inicio, 3)
+        raise TimeoutError(f"⏰ TIMEOUT REAL: La llamada a Gemini ({model_name}) superó el límite de {timeout_segundos}s (Duración parcial: {duracion}s).")
+
+    if "exception" in resultado_contenedor:
+        raise resultado_contenedor["exception"]
+
+    response = resultado_contenedor.get("response")
     duracion = round(time.time() - t_inicio, 3)
-    raise Exception(f"Error de red/modelo en {model_name} tras reintentos (Duración: {duracion}s).")
+    tam_respuesta = len(response.text) if response and response.text else 0
+    tokens_respuesta = tam_respuesta // 4
+
+    telemetria_llamada = {
+        "modelo": model_name,
+        "tam_prompt_chars": tam_prompt,
+        "tokens_prompt_est": tokens_prompt,
+        "tam_respuesta_chars": tam_respuesta,
+        "tokens_respuesta_est": tokens_respuesta,
+        "duracion_s": duracion
+    }
+
+    return response, telemetria_llamada
 
 
 # ====================================================================
-# PROMPT Y ESQUEMA DE EXTRACCIÓN
+# PROMPTS Y ESQUEMAS DE PRODUCCIÓN
 # ====================================================================
 PROMPT_FASE_1_EXTRACCION = """
 Eres un motor de extracción de datos médicos altamente preciso especializado en ecocardiografía. Tu ÚNICA tarea es extraer los valores numéricos y métricas exactas del texto del informe proporcionado y volcarlos en el siguiente esquema JSON.
@@ -296,7 +327,7 @@ ESTRUCTURA DE SALIDA OBLIGATORIA (JSON PURO SIN MARKDOWN):
 PROMPT_FASE_3_REDACCION = """
 Eres un médico cardiólogo especialista en ecocardiografía que redacta exclusivamente utilizando el estilo formal, sobrio, elegante y clínico del Dr. Diego Ross Álvarez.
 
-Recibirás un objeto JSON con los hechos clínicos estructurados. Redacta la descripción ecocardiográfica institucional, la sección de conclusiones y el diagnóstico final.
+Recibirás únicamente los hechos clínicos estructurados y hallazgos relevantes procesados por el motor determinista. Redacta la descripción ecocardiográfica institucional, la sección de conclusiones y el diagnóstico final.
 Devuelve un objeto JSON puro (sin markdown) con esta estructura estricta:
 {
   "narrativa_descriptiva": "...",
@@ -507,13 +538,20 @@ def fase_2_motor_ross_determinista(data: dict) -> dict:
 
 
 # ====================================================================
-# REDACCIÓN Y AUDITORÍA INDEPENDIENTES (PROBLEMA 3 & 6)
+# REDACCIÓN OPTIMIZADA CON PAYLOAD REDUCIDO (PUNTO 3)
 # ====================================================================
-def fase_3_ia_redactora(client: genai.Client, api_key: str, data: dict) -> Dict[str, Any]:
-    response, duracion = llamada_segura_gemini(
+def fase_3_ia_redactora(client: genai.Client, api_key: str, data: dict) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    # Optimización: Enviar únicamente hechos clínicos y conclusiones deterministas para ahorrar tokens y latencia
+    payload_reducido = {
+        "paciente": data.get("paciente", {}),
+        "hechos_clinicos": data.get("hechos_clinicos", {}),
+        "conclusiones_deterministicas": data.get("conclusiones_deterministicas", [])
+    }
+
+    response, telemetria = llamada_segura_gemini(
         client=client,
         model_name="gemini-3.8-flash",
-        contents=[PROMPT_FASE_3_REDACCION, json.dumps(data, ensure_ascii=False)],
+        contents=[PROMPT_FASE_3_REDACCION, json.dumps(payload_reducido, ensure_ascii=False)],
         config_gen=types.GenerateContentConfig(temperature=0.1)
     )
     texto_resp = re.sub(r"^```json\s*", "", response.text.strip())
@@ -523,11 +561,11 @@ def fase_3_ia_redactora(client: genai.Client, api_key: str, data: dict) -> Dict[
     valido, mensaje, parsed = validar_json_redaccion(texto_resp)
     if not valido:
         raise ValueError(f"Fallo en validación de Redacción: {mensaje}")
-    return parsed
+    return parsed, telemetria
 
 
-def fase_3_5_auditor_clinico(client: genai.Client, api_key: str, data: dict, resultado_fase_3: dict) -> Dict[str, Any]:
-    response, duracion = llamada_segura_gemini(
+def fase_3_5_auditor_clinico(client: genai.Client, api_key: str, data: dict, resultado_fase_3: dict) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    response, telemetria = llamada_segura_gemini(
         client=client,
         model_name="gemini-3.8-flash",
         contents=["Eres auditor clínico. Verifica consistencia y responde 'APROBADO' o 'OBSERVACIONES' con texto plano.", json.dumps(resultado_fase_3, ensure_ascii=False)],
@@ -535,7 +573,7 @@ def fase_3_5_auditor_clinico(client: genai.Client, api_key: str, data: dict, res
     )
     valido, texto_auditor = validar_respuesta_auditor(response.text)
     aprobado = "APROBADO" in texto_auditor.upper()
-    return {"aprobado": aprobado, "comentario": texto_auditor}
+    return {"aprobado": aprobado, "comentario": texto_auditor}, telemetria
 
 
 def generar_pdf_reportlab(data: dict, narrativa: str, conclusiones: List[str], diagnostico: str) -> bytes:
@@ -562,7 +600,7 @@ def generar_pdf_reportlab(data: dict, narrativa: str, conclusiones: List[str], d
 
 
 # ====================================================================
-# APLICACIÓN STREAMLIT CON TELEMETRÍA DE FASE VISIBLE Y LOG DETALLADO
+# APLICACIÓN STREAMLIT CON RANKING DE CUELLOS DE BOTELLA (PUNTO 5 Y 8)
 # ====================================================================
 if "reporte_hibrido" not in st.session_state:
     st.session_state["reporte_hibrido"] = None
@@ -587,8 +625,7 @@ if uploaded_file is not None:
             st.warning("⚠️ Ingrese su API Key en el panel lateral.")
     else:
         with col1:
-            if st.button("🚀 Ejecutar Auditoría v7.8 (Anti-Bloqueo)", use_container_width=True):
-                # FASE ACTUAL VISIBLE EN TIEMPO REAL (PROBLEMA 5)
+            if st.button("🚀 Ejecutar Auditoría v7.9 (Optimizado)", use_container_width=True):
                 status_placeholder = st.empty()
                 log_detallado = []
                 
@@ -608,14 +645,14 @@ if uploaded_file is not None:
 
                     # FASE 2: Extracción Gemini
                     status_placeholder.info("🔄 Fase actual: **Extracción** (Procesando con Gemini 3.8 Flash...)")
-                    t0 = time.time()
                     prompt_ext = f"{PROMPT_FASE_1_EXTRACCION}\nDATOS CRUDOS DEL INFORMANTE:\n{datos_crudos_ocr}"
                     
-                    response_f1, dur_ext = llamada_segura_gemini(
+                    response_f1, tel_ext = llamada_segura_gemini(
                         client=client,
                         model_name="gemini-3.8-flash",
                         contents=[prompt_ext],
-                        config_gen=config_gen
+                        config_gen=config_gen,
+                        timeout_segundos=25
                     )
                     
                     texto_resp = re.sub(r"^```json\s*", "", response_f1.text.strip())
@@ -626,7 +663,7 @@ if uploaded_file is not None:
                     if not valido_ext:
                         raise ValueError(f"Fallo de validación en Extracción: {msg_ext}")
                     
-                    log_detallado.append({"fase": "Extracción", "duracion": dur_ext, "estado": "OK"})
+                    log_detallado.append({"fase": "Extracción", "duracion": tel_ext["duracion_s"], "estado": "OK", "telemetria": tel_ext})
 
                     # FASE 3: Normalización
                     status_placeholder.info("🔄 Fase actual: **Normalización** (Sanitizando y convirtiendo datos...)")
@@ -645,18 +682,14 @@ if uploaded_file is not None:
                     log_detallado.append({"fase": "Motor Ross", "duracion": t_ross, "estado": "OK"})
 
                     # FASE 5: Redacción
-                    status_placeholder.info("🔄 Fase actual: **Redacción** (Generando informe formal con IA...)")
-                    t0 = time.time()
-                    resultado_redaccion = fase_3_ia_redactora(client, api_key, json_procesado)
-                    t_red = round(time.time() - t0, 3)
-                    log_detallado.append({"fase": "Redacción", "duracion": t_red, "estado": "OK"})
+                    status_placeholder.info("🔄 Fase actual: **Redacción** (Generando informe formal optimizado...)")
+                    resultado_redaccion, tel_red = fase_3_ia_redactora(client, api_key, json_procesado)
+                    log_detallado.append({"fase": "Redacción", "duracion": tel_red["duracion_s"], "estado": "OK", "telemetria": tel_red})
 
                     # FASE 6: Auditoría
                     status_placeholder.info("🔄 Fase actual: **Auditoría** (Verificando consistencia clínica...)")
-                    t0 = time.time()
-                    resultado_auditoria = fase_3_5_auditor_clinico(client, api_key, json_procesado, resultado_redaccion)
-                    t_aud = round(time.time() - t0, 3)
-                    log_detallado.append({"fase": "Auditoría", "duracion": t_aud, "estado": "OK"})
+                    resultado_auditoria, tel_aud = fase_3_5_auditor_clinico(client, api_key, json_procesado, resultado_redaccion)
+                    log_detallado.append({"fase": "Auditoría", "duracion": tel_aud["duracion_s"], "estado": "OK", "telemetria": tel_aud})
 
                     st.session_state["narrativa_clinica"] = resultado_redaccion.get("narrativa_descriptiva", "")
                     st.session_state["conclusiones_clinicas"] = resultado_redaccion.get("conclusiones_redactadas", json_procesado.get("conclusiones_deterministicas"))
@@ -664,10 +697,18 @@ if uploaded_file is not None:
 
                     tiempo_total = round(time.time() - t_inicio_total, 3)
 
+                    # Cálculo de porcentajes por fase (Punto 8)
+                    for item in log_detallado:
+                        item["pct_total"] = round((item["duracion"] / tiempo_total) * 100, 1) if tiempo_total > 0 else 0.0
+
+                    fase_mas_lenta_obj = max(log_detallado, key=lambda x: x["duracion"])
+
                     log_estudio = {
                         "fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         "recall_pct": recall_res["recall_clinico_pct"],
                         "tiempo_total": tiempo_total,
+                        "fase_mas_lenta": fase_mas_lenta_obj["fase"],
+                        "pct_mas_lenta": fase_mas_lenta_obj["pct_total"],
                         "recall_res": recall_res,
                         "reporte_ocr": reporte_ocr,
                         "log_detallado": log_detallado
@@ -677,35 +718,36 @@ if uploaded_file is not None:
                     guardar_historial_disco(historial_lote)
                     st.session_state["ultimo_estudio"] = log_estudio
 
-                    status_placeholder.success(f"¡Auditoría v7.8 completada con éxito en {tiempo_total}s (Recall Clínico: {recall_res['recall_clinico_pct']}%)!")
+                    status_placeholder.success(f"¡Auditoría v7.9 completada con éxito en {tiempo_total}s (Recall Clínico: {recall_res['recall_clinico_pct']}%)!")
                 except Exception as e:
                     status_placeholder.error(f"❌ Error crítico en ejecución:")
                     st.error(f"Detalle del fallo: {str(e)}")
-                    st.code(json.dumps(log_detallado, indent=2, ensure_ascii=False), language="json")
 
 # ====================================================================
-# CONSOLA DE AUDITORÍA Y ESTADÍSTICAS PERSISTENTES
+# CONSOLA DE AUDITORÍA Y RANKING DE CUELLOS DE BOTELLA
 # ====================================================================
 if st.session_state["reporte_hibrido"]:
     st.markdown("---")
     
-    with st.expander("🛠️ CONSOLA DE AUDITORÍA Y TRAZA DETALLADA v7.8", expanded=True):
+    with st.expander("🛠️ CONSOLA DE LATENCIA Y CUELLOS DE BOTELLA v7.9", expanded=True):
         ultimo = st.session_state.get("ultimo_estudio", {})
         recall_d = ultimo.get("recall_res", {})
         ocr_d = ultimo.get("reporte_ocr", {})
         traza = ultimo.get("log_detallado", [])
 
-        st.markdown("### 🎯 Evaluación de Recall Clínico Real")
+        st.markdown("### 🎯 Métricas de Rendimiento y Fase Dominante")
         c1, c2, c3 = st.columns(3)
-        with c1: st.metric("Recall Clínico", f"{recall_d.get('recall_clinico_pct', 0)}%")
-        with c2: st.metric("Variables en OCR", f"{recall_d.get('variables_en_ocr', 0)}")
-        with c3: st.metric("Recuperadas con Éxito", f"{recall_d.get('variables_recuperadas', 0)}")
+        with c1: st.metric("Tiempo Total", f"{ultimo.get('tiempo_total', 0)} s")
+        with c2: st.metric("Fase Más Lenta", f"{ultimo.get('fase_mas_lenta', 'N/D')}")
+        with c3: st.metric("Impacto Temporal", f"{ultimo.get('pct_mas_lenta', 0)}% del total")
 
-        st.info(f"**Calificación de Extracción:** {recall_d.get('calificacion_recall', 'N/D')}")
+        if ocr_d.get("alertas_ocr"):
+            for alt in ocr_d["alertas_ocr"]:
+                st.warning(alt)
 
         if traza:
             st.markdown("---")
-            st.markdown("### ⏱️ Trazabilidad de Duración por Fase")
+            st.markdown("### ⏱️ Ranking de Tiempo Consumido por Fase")
             st.table(traza)
 
         st.markdown("---")
@@ -718,7 +760,7 @@ if st.session_state["reporte_hibrido"]:
             st.write(f"- **Promedio de Recall Clínico Histórico:** `{prom_rec}%`")
             st.write(f"- **Promedio de Tiempo Total de Procesamiento:** `{prom_t} s`")
 
-    st.markdown("#### ✏️ 2. Panel de Validación Médica v7.8")
+    st.markdown("#### ✏️ 2. Panel de Validación Médica v7.9")
     data = st.session_state["reporte_hibrido"]
 
     with st.container():
@@ -733,6 +775,6 @@ if st.session_state["reporte_hibrido"]:
         st.session_state["narrativa_clinica"] = st.text_area("Narrativa:", value=st.session_state["narrativa_clinica"], height=120)
 
     st.markdown("---")
-    if st.button("📥 Generar PDF Institucional v7.8", type="primary", use_container_width=True):
+    if st.button("📥 Generar PDF Institucional v7.9", type="primary", use_container_width=True):
         pdf_bytes = generar_pdf_reportlab(data, st.session_state["narrativa_clinica"], st.session_state["conclusiones_clinicas"], "Ecocardiograma valorado.")
-        st.download_button("💾 Descargar PDF", data=pdf_bytes, file_name="Reporte_Ecocardiograma_v7.8.pdf", mime="application/pdf", use_container_width=True)
+        st.download_button("💾 Descargar PDF", data=pdf_bytes, file_name="Reporte_Ecocardiograma_v7.9.pdf", mime="application/pdf", use_container_width=True)
