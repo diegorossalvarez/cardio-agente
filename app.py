@@ -11,7 +11,7 @@ from google import genai
 from google.genai import types
 
 # ====================================================================
-# CONFIGURACIÓN Y PERSISTENCIA DE LOTE (APP 1 - V12.0 CEREBRO CLÍNICO)
+# CONFIGURACIÓN Y PERSISTENCIA DE LOTE (APP 1 - V12.1 CEREBRO CLÍNICO)
 # ====================================================================
 HISTORIAL_FILE = "historial_lote_extractor_v12.json"
 
@@ -38,23 +38,43 @@ CLINICAL_CONFIG = {
 }
 
 # ====================================================================
-# CORRECCIÓN PROBLEMA 5: PATRONES DE RECALL CLÍNICO ROBUSTOS Y AMPLIOS
+# PATRONES DE RECALL CLÍNICO ROBUSTOS (SOPORTE DUAL CHISON + ESTÁNDAR)
 # ====================================================================
 PATRONES_OCR_RECALL = {
-    "ventriculo_izquierdo.fevi_porcentaje": [r"fevi", r"f\.e\.v\.i\.", r"fracci[oó]n de eyecci[oó]n", r"ef", r"e\.f\."],
-    "ventriculo_izquierdo.dtdvi_mm": [r"dtdvi", r"dtd\s*vi", r"di[aá]metro telediast[oó]lico", r"lvid(d)?"],
-    "ventriculo_izquierdo.dtsvi_mm": [r"dtsvi", r"dts\s*vi", r"di[aá]metro telesist[oó]lico", r"lvid(s)?"],
-    "ventriculo_izquierdo.volumen_telediastolico_ml": [r"vtd", r"edv", r"volumen telediast[oó]lico"],
-    "ventriculo_izquierdo.volumen_telesistolico_ml": [r"vts", r"esv", r"volumen telesist[oó]lico"],
-    "ventriculo_izquierdo.masa_miocardica_g": [r"masa", r"mass"],
-    "auricula_izquierda.diametro_ap_mm": [r"aur[ií]cula izquierda", r"ai\s*ap", r"lad", r"d[ií]ametro ai"],
-    "ventriculo_derecho.diametro_basal_mm": [r"vd\s*basal", r"rv\s*basal", r"ventr[ií]culo derecho"],
-    "ventriculo_derecho.tapse_mm": [r"tapse"],
-    "hemodinamica_derecha.psap_calculada_mmhg": [r"psap", r"pasc", r"pap"]
+    "ventriculo_izquierdo.fevi_porcentaje": [
+        r"fevi", r"f\.e\.v\.i\.", r"fracci[oó]n de eyecci[oó]n", r"\bef\b", r"e\.f\.", r"\bfe\b"
+    ],
+    "ventriculo_izquierdo.dtdvi_mm": [
+        r"dtdvi", r"dtd\s*vi", r"ddvi", r"di[aá]metro telediast[oó]lico", r"lvid(d)?"
+    ],
+    "ventriculo_izquierdo.dtsvi_mm": [
+        r"dtsvi", r"dts\s*vi", r"dsvi", r"di[aá]metro telesist[oó]lico", r"lvid(s)?"
+    ],
+    "ventriculo_izquierdo.volumen_telediastolico_ml": [
+        r"\bvtd\b", r"\bedv\b", r"edv\(a4c\)", r"edv\(a2c\)", r"volumen telediast[oó]lico"
+    ],
+    "ventriculo_izquierdo.volumen_telesistolico_ml": [
+        r"\bvts\b", r"\besv\b", r"esv\(a4c\)", r"esv\(a2c\)", r"volumen telesist[oó]lico"
+    ],
+    "ventriculo_izquierdo.masa_miocardica_g": [
+        r"vi\s*masa", r"masa", r"mass"
+    ],
+    "auricula_izquierda.diametro_ap_mm": [
+        r"aur[ií]cula izquierda", r"ai\s*ap", r"diametro\s*ap-la", r"\bla\b", r"lad", r"di[aá]metro ai"
+    ],
+    "ventriculo_derecho.diametro_basal_mm": [
+        r"vd\s*basal", r"vd\s*base", r"rv\s*basal", r"ventr[ií]culo derecho"
+    ],
+    "ventriculo_derecho.tapse_mm": [
+        r"tapse"
+    ],
+    "hemodinamica_derecha.psap_calculada_mmhg": [
+        r"psap", r"pasc", r"pap", r"tv\s*pgmax", r"vt\s*vmax"
+    ]
 }
 
 st.set_page_config(
-    page_title="CardioAgente | Extractor Clínico Maestro v12.0",
+    page_title="CardioAgente | Extractor Clínico Maestro v12.1",
     page_icon="🧬",
     layout="wide",
 )
@@ -74,8 +94,8 @@ st.markdown("""
 
 st.markdown("""
     <div class="clinic-header">
-        <h2 style='margin:0; font-size: 24px;'>🧬 CardioAgente - Extractor Clínico Maestro v12.0 (Auditoría Final)</h2>
-        <p style='margin:5px 0 0 0; font-size: 14px;'>Dr. Diego Ross Álvarez | Recall Corregido | Jerarquía Patológica VI/Motilidad | Masa VI e Índice | Impresión Clínica Real</p>
+        <h2 style='margin:0; font-size: 24px;'>🧬 CardioAgente - Extractor Clínico Maestro v12.1 (Chison Dual & Autocalibrado)</h2>
+        <p style='margin:5px 0 0 0; font-size: 14px;'>Dr. Diego Ross Álvarez | Soporte Dual de Nomenclatura | Conversión Fisiológica Automática | Geometría VI y Hemodinamia Real</p>
     </div>
 """, unsafe_allow_html=True)
 
@@ -83,7 +103,13 @@ with st.sidebar:
     st.markdown("### ⚙️ Configuración del Cerebro Clínico")
     api_key = st.text_input("Gemini API Key", type="password")
     st.markdown("---")
-    st.info("Directiva v12.0:\n• Recall 100% calibrado y robusto\n• Jerarquía dominada por motilidad e hipertrofia/masa\n• Exclusión absoluta de normalidades en diagnóstico\n• Trazabilidad total sin variables huérfanas")
+    st.info(
+        "Directiva v12.1:\n"
+        "• Compatible con presets antiguos y nuevos de Chison EBit 60\n"
+        "• Autoconversión cm->mm, s->ms y limpieza de signos (-)\n"
+        "• Filtro anti-falsos positivos en motilidad normal\n"
+        "• Umbrales ASE ajustados por sexo y RWT"
+    )
 
 
 # ====================================================================
@@ -128,7 +154,7 @@ def validar_json_extraccion(texto_respuesta: str) -> Tuple[bool, str, Optional[d
     try:
         parsed = json.loads(texto_limpio)
         if not isinstance(parsed, dict):
-            return False, "El JSON de extracción não es un diccionario válido.", None
+            return False, "El JSON de extracción no es un diccionario válido.", None
         
         secciones_requeridas = ["paciente", "ventriculo_izquierdo", "auricula_izquierda", "ventriculo_derecho"]
         for sec in secciones_requeridas:
@@ -156,7 +182,7 @@ def llamada_segura_gemini(client, model_name: str, contents: list, config_gen: t
             return response, duracion
         except Exception as e:
             error_str = str(e)
-            if "503" in error_str or "UNAVAILABLE" in error_str or "high demand" in error_str.lower() or "rate limit" in error_str.lower() or "timeout" in error_str.lower():
+            if any(err in error_str.lower() for err in ["503", "unavailable", "high demand", "rate limit", "timeout"]):
                 if intento < max_retries - 1:
                     time.sleep(delay)
                     delay *= 2
@@ -167,15 +193,35 @@ def llamada_segura_gemini(client, model_name: str, contents: list, config_gen: t
 
 
 # ====================================================================
-# PROMPT DE EXTRACCIÓN ESTRICTA
+# PROMPT DE EXTRACCIÓN ESTRICTA (CON DICCIONARIO POLIMÓRFICO CHISON)
 # ====================================================================
 PROMPT_EXTRACCION = """
-Eres un motor de extracción de datos médicos altamente preciso especializado en ecocardiografía. Tu ÚNICA tarea es extraer los valores numéricos y métricas exactas del texto del informe proporcionado y volcarlos en el siguiente esquema JSON.
+Eres un motor de extracción de datos médicos altamente preciso especializado en ecocardiografía (incluyendo reportes tabulares desordenados de equipos Chison EBit 60). Tu ÚNICA tarea es extraer los valores numéricos y descriptivos del texto del informe proporcionado y volcarlos en el siguiente esquema JSON.
 
-REGLAS CRÍTICAS ABSOLUTAS:
-- Extrae únicamente lo que esté explícitamente en el texto.
-- Si un parámetro numérico o categórico no existe o no fue evaluado, asigna estrictamente el valor null. PROHIBIDO usar 0.0 o valores por defecto.
-- PROHIBIDO inventar, calcular interpretaciones, emitir juicios clínicos o generar diagnósticos. Solo extrae variables brutas.
+REGLAS CRÍTICAS DE MAPEO Y EQUIVALENCIAS (SOPORTE DUAL):
+1. Extrae únicamente lo que esté explícitamente en el texto. Si un parámetro no existe, asigna estrictamente null. PROHIBIDO usar 0.0 por defecto.
+2. EMPAREJAMIENTO DE COLUMNAS DESFASADAS: En ocasiones el OCR agrupa primero una lista vertical de etiquetas (ej. TV PGmax, VDTS AccT, Ea(MV medial), E/Ea(MV medial), Sa(MV lateral), Ea(MV lateral), E/Ea(MV lateral)) y justo debajo la lista vertical de sus valores en el mismo orden exacto. Empareja cada etiqueta con su valor correspondiente por posición secuencial.
+3. DICCIONARIO DE SINÓNIMOS DEL ECÓGRAFO:
+   - dtdvi_mm: busca "DDVI", "LVIDd", "DTDVI".
+   - dtsvi_mm: busca "DSVI", "LVIDS", "DTSVI".
+   - siv_mm: busca "SIVd", "IVSd", "SIV".
+   - ppvi_mm: busca "PPd", "LVPWd", "PPVI".
+   - rwt: busca "RWT" (espesor relativo de pared).
+   - fevi_porcentaje: busca "FE", "FEVI", "EF".
+   - volumen_telediastolico_ml: prioriza el valor integrado "EDV" o "VTD". Si solo hay planos separados, usa "EDV(A4C)" o "EDV(A2C)".
+   - volumen_telesistolico_ml: prioriza "ESV" o "VTS". Si no, usa "ESV(A4C)" o "ESV(A2C)".
+   - masa_miocardica_g: busca "VI masa", "LV Mass".
+   - indice_masa_miocardica_g_m2: busca "VI Indice Masa", "LV Mass Index".
+   - movilidad_anormal_descripcion: ATENCIÓN: Si el texto dice "sin alteraciones de la movilidad global ni segmentaria" o "movilidad conservada/normal", asigna estrictamente null. Solo pon texto aquí si existe hipocinesia, acinesia, discinesia o asincronía real.
+   - auricula_izquierda: diametro_ap_mm ("Diametro Ap-LA", "LA", "AI AP"); area_cm2 ("LAa"); volumen_ml ("VAI 4C", "VAI 2C", "VAI 20"); volumen_indexado_ml_m2 ("IVAI", "LAVI").
+   - ventriculo_derecho: diametro_basal_mm ("VD base", "VD basal"); tapse_mm ("TAPSE"); cafvd_porcentaje ("CAFVD", "FAC"); area_diastolica_cm2 ("RVAd"); area_sistolica_cm2 ("RVAS").
+   - auricula_derecha: area_cm2 ("RAa"); volumen_ml ("VAD"); volumen_indexado_ml_m2 ("IVAD").
+   - hemodinamica_derecha: velocidad_it_max_ms ("VT Vmax", "TR Vmax", "IT Vmax"); gradiente_it_pico_mmhg ("TV PGmax", "TR PGmax"); pad_estimada_mmhg ("RAP", "PAD").
+   - funcion_diastolica_bruta: onda_e_cm_s ("VM E Vel", "MV E Vel"); onda_a_cm_s ("VM A Vel", "MV A Vel"); relacion_e_a ("E/A"); tda_ms ("MV DecT"); trvi_ms ("IVRT"); e_prima_septal_cm_s ("Ea(MV medial)"); e_prima_lateral_cm_s ("Ea(MV lateral)"); e_e_prima_medial ("E/Ea(MV medial)"); e_e_prima_lateral ("E/Ea(MV lateral)").
+   - aorta_y_tractos: raiz_aortica_mm ("AO"); senos_valsalva_mm ("S. valsalva"); union_st_mm ("Union ST"); tsvi_diametro_mm ("TSVI Diam"); tsvi_ivt_cm ("TSVI IVT"); tsvd_diametro_mm ("VDTS Diam"); tsvd_ivt_cm ("VDTS IVT"); acct_pulmonar_ms ("VDTS AccT", "AccT").
+   - valvulas: aortica_vmax_ms ("VA Vmax", "AV Vmax"); aortica_grad_max_mmhg ("AV PGmax"); aortica_grad_medio_mmhg ("AV PGmean"); pulmonar_vmax_ms ("VP Vmax", "VF Vmax"); pulmonar_grad_max_mmhg ("PV PGmax"). Si en la sección "Descripción" se menciona algún hallazgo valvular (ej. "billowing mitral, sin insuficiencia asociada"), colócalo en "hallazgos_descriptivos_adicionales".
+   - pericardio_cava: cava_inferior_diametro_mm ("IVC Exp", "VCI"); cava_inferior_inspiracion_mm ("IVC Ins"); cava_colapso_porcentaje ("IVC Ins/IVC Exp").
+4. UNIDADES: Convierte diámetros en centímetros (cm) a milímetros (mm) multiplicando por 10 (ej. DDVI 4.17 cm -> 41.7, TAPSE 2.21 cm -> 22.1, IVC Exp 1.35 cm -> 13.5). Ignora el signo negativo (-) en todas las velocidades Doppler.
 
 ESTRUCTURA DE SALIDA OBLIGATORIA (JSON PURO SIN MARKDOWN):
 {
@@ -185,7 +231,10 @@ ESTRUCTURA DE SALIDA OBLIGATORIA (JSON PURO SIN MARKDOWN):
     "sexo": null,
     "peso_kg": null,
     "talla_m": null,
-    "asc_m2": null
+    "asc_m2": null,
+    "fc_lpm": null,
+    "pa_sistolica_mmhg": null,
+    "pa_diastolica_mmhg": null
   },
   "introduccion": "",
   "ventriculo_izquierdo": {
@@ -193,9 +242,13 @@ ESTRUCTURA DE SALIDA OBLIGATORIA (JSON PURO SIN MARKDOWN):
     "dtsvi_mm": null,
     "siv_mm": null,
     "ppvi_mm": null,
+    "rwt": null,
     "fevi_porcentaje": null,
     "volumen_telediastolico_ml": null,
     "volumen_telesistolico_ml": null,
+    "volumen_latido_ml": null,
+    "gasto_cardiaco_l_min": null,
+    "indice_cardiaco_l_min_m2": null,
     "masa_miocardica_g": null,
     "indice_masa_miocardica_g_m2": null,
     "movilidad_anormal_descripcion": null
@@ -209,14 +262,20 @@ ESTRUCTURA DE SALIDA OBLIGATORIA (JSON PURO SIN MARKDOWN):
   "ventriculo_derecho": {
     "diametro_basal_mm": null,
     "tapse_mm": null,
-    "onda_s_cm_s": null
+    "onda_s_cm_s": null,
+    "cafvd_porcentaje": null,
+    "area_diastolica_cm2": null,
+    "area_sistolica_cm2": null
   },
   "auricula_derecha": {
-    "area_cm2": null
+    "area_cm2": null,
+    "volumen_ml": null,
+    "volumen_indexado_ml_m2": null
   },
   "hemodinamica_derecha": {
     "velocidad_it_max_ms": null,
     "gradiente_it_pico_mmhg": null,
+    "pad_estimada_mmhg": null,
     "psap_calculada_mmhg": null
   },
   "funcion_diastolica_bruta": {
@@ -224,23 +283,43 @@ ESTRUCTURA DE SALIDA OBLIGATORIA (JSON PURO SIN MARKDOWN):
     "onda_a_cm_s": null,
     "relacion_e_a": null,
     "tda_ms": null,
+    "trvi_ms": null,
     "e_prima_septal_cm_s": null,
     "e_prima_lateral_cm_s": null,
+    "e_e_prima_medial": null,
+    "e_e_prima_lateral": null,
     "relacion_e_e_prima": null
+  },
+  "aorta_y_tractos": {
+    "raiz_aortica_mm": null,
+    "senos_valsalva_mm": null,
+    "union_st_mm": null,
+    "tsvi_diametro_mm": null,
+    "tsvi_vmax_ms": null,
+    "tsvi_ivt_cm": null,
+    "tsvd_diametro_mm": null,
+    "tsvd_vmax_ms": null,
+    "tsvd_ivt_cm": null,
+    "acct_pulmonar_ms": null
   },
   "valvulas": {
     "aortica_vmax_ms": null,
+    "aortica_grad_max_mmhg": null,
     "aortica_grad_medio_mmhg": null,
     "aortica_area_cm2": null,
     "aortica_insuficiencia": null,
     "mitral_insuficiencia": null,
     "mitral_estenosis": null,
     "tricuspide_insuficiencia": null,
-    "pulmonar_insuficiencia": null
+    "pulmonar_vmax_ms": null,
+    "pulmonar_grad_max_mmhg": null,
+    "pulmonar_insuficiencia": null,
+    "hallazgos_descriptivos_adicionales": null
   },
   "pericardio_cava": {
     "derrame_pericardico": null,
     "cava_inferior_diametro_mm": null,
+    "cava_inferior_inspiracion_mm": null,
     "cava_colapso_porcentaje": null
   }
 }
@@ -248,13 +327,14 @@ ESTRUCTURA DE SALIDA OBLIGATORIA (JSON PURO SIN MARKDOWN):
 
 
 # ====================================================================
-# SANITIZACIÓN Y NORMALIZACIÓN
+# SANITIZACIÓN Y AUTOCONVERSIÓN FISIOLÓGICA DE UNIDADES
 # ====================================================================
-def sanitizar_y_convertir_numero(val: Any) -> Optional[float]:
+def sanitizar_y_convertir_numero(val: Any, usar_abs: bool = True) -> Optional[float]:
     if val is None:
         return None
     if isinstance(val, (int, float)):
-        return float(val)
+        num = float(val)
+        return abs(num) if usar_abs else num
     if isinstance(val, str):
         val_clean = val.strip().lower()
         if not val_clean or val_clean in ["null", "none", "n/a", "no reportado", "-"]:
@@ -262,10 +342,43 @@ def sanitizar_y_convertir_numero(val: Any) -> Optional[float]:
         match = re.search(r"([-+]?\d*\.?\d+)", val_clean)
         if match:
             try:
-                return float(match.group(1))
+                num = float(match.group(1))
+                return abs(num) if usar_abs else num
             except ValueError:
                 return None
     return None
+
+def autoconvertir_cm_a_mm(val: Optional[float], umbral_cm_max: float) -> Optional[float]:
+    """Si el valor es menor al umbral fisiológico en mm, viene en cm -> multiplica por 10."""
+    if val is None:
+        return None
+    if 0 < val <= umbral_cm_max:
+        return round(val * 10.0, 2)
+    return round(val, 2)
+
+def autoconvertir_velocidad_ms(val: Optional[float]) -> Optional[float]:
+    """Si una velocidad esperada en m/s es > 15, viene en cm/s -> divide entre 100."""
+    if val is None:
+        return None
+    if val > 15.0:
+        return round(val / 100.0, 2)
+    return round(val, 2)
+
+def autoconvertir_velocidad_cms(val: Optional[float]) -> Optional[float]:
+    """Si una velocidad esperada en cm/s es < 3.5, viene en m/s -> multiplica por 100."""
+    if val is None:
+        return None
+    if 0 < val < 3.5:
+        return round(val * 100.0, 2)
+    return round(val, 2)
+
+def autoconvertir_tiempo_ms(val: Optional[float]) -> Optional[float]:
+    """Si un tiempo esperado en ms (TDA, IVRT, AccT) es < 3.0, viene en segundos -> * 1000."""
+    if val is None:
+        return None
+    if 0 < val < 3.0:
+        return round(val * 1000.0, 1)
+    return round(val, 1)
 
 def sanitizar_texto(val: Any) -> Optional[str]:
     if val is None:
@@ -284,72 +397,198 @@ def sanitizar_texto(val: Any) -> Optional[str]:
         
     return val_clean
 
+def filtrar_motilidad_normal(texto_mov: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Evita que frases como 'Movilidad: sin alteraciones...' se clasifiquen como patológicas.
+    Además, separa texto infiltrado (ej. 'Se observa billowing mitral...') hacia notas adicionales.
+    """
+    if not texto_mov:
+        return None, None
+
+     oraciones = [s.strip() for s in re.split(r'[.;\n]', texto_mov) if s.strip()]
+    mov_anormal = []
+    extra_valvular = []
+
+    patrones_normales = [
+        r"sin\s+alteraciones", r"conservad[ao]", r"normal",
+        r"adecuad[ao]", r"sin\s+trastornos", r"no\s+se\s+observan\s+alteraciones"
+    ]
+
+    for orac in oraciones:
+        orac_low = orac.lower()
+        if any(w in orac_low for w in ["mitral", "aórtic", "aortic", "tricúsp", "tricusp", "pulmonar", "billow", "prolapso", "esclerosis", "insuficiencia"]):
+            extra_valvular.append(orac)
+            continue
+        if any(re.search(pat, orac_low) for pat in patrones_normales):
+            continue
+        mov_anormal.append(orac)
+
+    mov_final = ". ".join(mov_anormal) if mov_anormal else None
+    extra_final = ". ".join(extra_valvular) if extra_valvular else None
+    return mov_final, extra_final
+
 def normalizar_datos(data: dict) -> dict:
     if not isinstance(data, dict):
         return data
 
+    # 1. Paciente
     pac = data.get("paciente", {})
     if isinstance(pac, dict):
         pac["nombre"] = sanitizar_texto(pac.get("nombre")) or ""
-        pac["edad"] = int(sanitizar_y_convertir_numero(pac.get("edad"))) if sanitizar_y_convertir_numero(pac.get("edad")) is not None else None
+        edad_num = sanitizar_y_convertir_numero(pac.get("edad"))
+        pac["edad"] = int(edad_num) if edad_num is not None else None
         pac["sexo"] = sanitizar_texto(pac.get("sexo"))
         pac["peso_kg"] = sanitizar_y_convertir_numero(pac.get("peso_kg"))
-        pac["talla_m"] = sanitizar_y_convertir_numero(pac.get("talla_m"))
+        talla = sanitizar_y_convertir_numero(pac.get("talla_m"))
+        if talla is not None and talla > 3.0:
+            talla = round(talla / 100.0, 2)  # 166 cm -> 1.66 m
+        pac["talla_m"] = talla
         pac["asc_m2"] = sanitizar_y_convertir_numero(pac.get("asc_m2"))
+        pac["fc_lpm"] = sanitizar_y_convertir_numero(pac.get("fc_lpm"))
+        pac["pa_sistolica_mmhg"] = sanitizar_y_convertir_numero(pac.get("pa_sistolica_mmhg"))
+        pac["pa_diastolica_mmhg"] = sanitizar_y_convertir_numero(pac.get("pa_diastolica_mmhg"))
 
+    # 2. Ventrículo Izquierdo
     vi = data.get("ventriculo_izquierdo", {})
+    extra_de_mov = None
     if isinstance(vi, dict):
-        for k in ["dtdvi_mm", "dtsvi_mm", "siv_mm", "ppvi_mm", "fevi_porcentaje", "volumen_telediastolico_ml", "volumen_telesistolico_ml", "masa_miocardica_g", "indice_masa_miocardica_g_m2"]:
-            vi[k] = sanitizar_y_convertir_numero(vi.get(k))
-        vi["movilidad_anormal_descripcion"] = sanitizar_texto(vi.get("movilidad_anormal_descripcion"))
+        vi["dtdvi_mm"] = autoconvertir_cm_a_mm(sanitizar_y_convertir_numero(vi.get("dtdvi_mm")), 12.0)
+        vi["dtsvi_mm"] = autoconvertir_cm_a_mm(sanitizar_y_convertir_numero(vi.get("dtsvi_mm")), 10.0)
+        vi["siv_mm"] = autoconvertir_cm_a_mm(sanitizar_y_convertir_numero(vi.get("siv_mm")), 4.0)
+        vi["ppvi_mm"] = autoconvertir_cm_a_mm(sanitizar_y_convertir_numero(vi.get("ppvi_mm")), 4.0)
+        vi["rwt"] = sanitizar_y_convertir_numero(vi.get("rwt"))
+        vi["fevi_porcentaje"] = sanitizar_y_convertir_numero(vi.get("fevi_porcentaje"))
+        vi["volumen_telediastolico_ml"] = sanitizar_y_convertir_numero(vi.get("volumen_telediastolico_ml"))
+        vi["volumen_telesistolico_ml"] = sanitizar_y_convertir_numero(vi.get("volumen_telesistolico_ml"))
+        vi["volumen_latido_ml"] = sanitizar_y_convertir_numero(vi.get("volumen_latido_ml"))
+        gc = sanitizar_y_convertir_numero(vi.get("gasto_cardiaco_l_min"))
+        if gc is not None and gc > 25.0:
+            gc = round(gc / 1000.0, 2)  # 3579.21 ml/min -> 3.58 L/min
+        vi["gasto_cardiaco_l_min"] = gc
+        vi["indice_cardiaco_l_min_m2"] = sanitizar_y_convertir_numero(vi.get("indice_cardiaco_l_min_m2"))
+        vi["masa_miocardica_g"] = sanitizar_y_convertir_numero(vi.get("masa_miocardica_g"))
+        vi["indice_masa_miocardica_g_m2"] = sanitizar_y_convertir_numero(vi.get("indice_masa_miocardica_g_m2"))
+        
+        mov_raw = sanitizar_texto(vi.get("movilidad_anormal_descripcion"))
+        mov_limpio, extra_de_mov = filtrar_motilidad_normal(mov_raw)
+        vi["movilidad_anormal_descripcion"] = mov_limpio
 
+    # 3. Aurícula Izquierda
     ai = data.get("auricula_izquierda", {})
     if isinstance(ai, dict):
-        for k in ["diametro_ap_mm", "volumen_ml", "volumen_indexado_ml_m2", "area_cm2"]:
-            ai[k] = sanitizar_y_convertir_numero(ai.get(k))
+        ai["diametro_ap_mm"] = autoconvertir_cm_a_mm(sanitizar_y_convertir_numero(ai.get("diametro_ap_mm")), 10.0)
+        ai["volumen_ml"] = sanitizar_y_convertir_numero(ai.get("volumen_ml"))
+        ai["volumen_indexado_ml_m2"] = sanitizar_y_convertir_numero(ai.get("volumen_indexado_ml_m2"))
+        ai["area_cm2"] = sanitizar_y_convertir_numero(ai.get("area_cm2"))
 
+    # 4. Ventrículo Derecho
     vd = data.get("ventriculo_derecho", {})
     if isinstance(vd, dict):
-        for k in ["diametro_basal_mm", "tapse_mm", "onda_s_cm_s"]:
-            vd[k] = sanitizar_y_convertir_numero(vd.get(k))
+        vd["diametro_basal_mm"] = autoconvertir_cm_a_mm(sanitizar_y_convertir_numero(vd.get("diametro_basal_mm")), 10.0)
+        vd["tapse_mm"] = autoconvertir_cm_a_mm(sanitizar_y_convertir_numero(vd.get("tapse_mm")), 6.0)
+        vd["onda_s_cm_s"] = autoconvertir_velocidad_cms(sanitizar_y_convertir_numero(vd.get("onda_s_cm_s")))
+        vd["cafvd_porcentaje"] = sanitizar_y_convertir_numero(vd.get("cafvd_porcentaje"))
+        vd["area_diastolica_cm2"] = sanitizar_y_convertir_numero(vd.get("area_diastolica_cm2"))
+        vd["area_sistolica_cm2"] = sanitizar_y_convertir_numero(vd.get("area_sistolica_cm2"))
 
+    # 5. Aurícula Derecha
     ad = data.get("auricula_derecha", {})
     if isinstance(ad, dict):
         ad["area_cm2"] = sanitizar_y_convertir_numero(ad.get("area_cm2"))
+        ad["volumen_ml"] = sanitizar_y_convertir_numero(ad.get("volumen_ml"))
+        ad["volumen_indexado_ml_m2"] = sanitizar_y_convertir_numero(ad.get("volumen_indexado_ml_m2"))
 
+    # 6. Hemodinámica Derecha
     hemo = data.get("hemodinamica_derecha", {})
     if isinstance(hemo, dict):
-        for k in ["velocidad_it_max_ms", "gradiente_it_pico_mmhg", "psap_calculada_mmhg"]:
-            hemo[k] = sanitizar_y_convertir_numero(hemo.get(k))
+        hemo["velocidad_it_max_ms"] = autoconvertir_velocidad_ms(sanitizar_y_convertir_numero(hemo.get("velocidad_it_max_ms")))
+        hemo["gradiente_it_pico_mmhg"] = sanitizar_y_convertir_numero(hemo.get("gradiente_it_pico_mmhg"))
+        hemo["pad_estimada_mmhg"] = sanitizar_y_convertir_numero(hemo.get("pad_estimada_mmhg"))
+        hemo["psap_calculada_mmhg"] = sanitizar_y_convertir_numero(hemo.get("psap_calculada_mmhg"))
 
-    fd_bruta = data.get("funcion_diastolica_bruta", {})
-    if isinstance(fd_bruta, dict):
-        for k in ["onda_e_cm_s", "onda_a_cm_s", "relacion_e_a", "tda_ms", "e_prima_septal_cm_s", "e_prima_lateral_cm_s", "relacion_e_e_prima"]:
-            fd_bruta[k] = sanitizar_y_convertir_numero(fd_bruta.get(k))
+    # 7. Función Diastólica
+    fd = data.get("funcion_diastolica_bruta", {})
+    if isinstance(fd, dict):
+        fd["onda_e_cm_s"] = autoconvertir_velocidad_cms(sanitizar_y_convertir_numero(fd.get("onda_e_cm_s")))
+        fd["onda_a_cm_s"] = autoconvertir_velocidad_cms(sanitizar_y_convertir_numero(fd.get("onda_a_cm_s")))
+        fd["relacion_e_a"] = sanitizar_y_convertir_numero(fd.get("relacion_e_a"))
+        fd["tda_ms"] = autoconvertir_tiempo_ms(sanitizar_y_convertir_numero(fd.get("tda_ms")))
+        fd["trvi_ms"] = autoconvertir_tiempo_ms(sanitizar_y_convertir_numero(fd.get("trvi_ms")))
+        fd["e_prima_septal_cm_s"] = autoconvertir_velocidad_cms(sanitizar_y_convertir_numero(fd.get("e_prima_septal_cm_s")))
+        fd["e_prima_lateral_cm_s"] = autoconvertir_velocidad_cms(sanitizar_y_convertir_numero(fd.get("e_prima_lateral_cm_s")))
+        fd["e_e_prima_medial"] = sanitizar_y_convertir_numero(fd.get("e_e_prima_medial"))
+        fd["e_e_prima_lateral"] = sanitizar_y_convertir_numero(fd.get("e_e_prima_lateral"))
+        
+        rel_ee = sanitizar_y_convertir_numero(fd.get("relacion_e_e_prima"))
+        if rel_ee is None:
+            eem = fd.get("e_e_prima_medial")
+            eel = fd.get("e_e_prima_lateral")
+            if eem is not None and eel is not None:
+                rel_ee = round((eem + eel) / 2.0, 2)
+            elif eem is not None:
+                rel_ee = eem
+            elif eel is not None:
+                rel_ee = eel
+        fd["relacion_e_e_prima"] = rel_ee
 
+    # 8. Aorta y Tractos de Salida
+    ao = data.get("aorta_y_tractos", {})
+    if isinstance(ao, dict):
+        ao["raiz_aortica_mm"] = autoconvertir_cm_a_mm(sanitizar_y_convertir_numero(ao.get("raiz_aortica_mm")), 8.0)
+        ao["senos_valsalva_mm"] = autoconvertir_cm_a_mm(sanitizar_y_convertir_numero(ao.get("senos_valsalva_mm")), 8.0)
+        ao["union_st_mm"] = autoconvertir_cm_a_mm(sanitizar_y_convertir_numero(ao.get("union_st_mm")), 8.0)
+        ao["tsvi_diametro_mm"] = autoconvertir_cm_a_mm(sanitizar_y_convertir_numero(ao.get("tsvi_diametro_mm")), 5.0)
+        ao["tsvi_vmax_ms"] = autoconvertir_velocidad_ms(sanitizar_y_convertir_numero(ao.get("tsvi_vmax_ms")))
+        ao["tsvi_ivt_cm"] = sanitizar_y_convertir_numero(ao.get("tsvi_ivt_cm"))
+        ao["tsvd_diametro_mm"] = autoconvertir_cm_a_mm(sanitizar_y_convertir_numero(ao.get("tsvd_diametro_mm")), 6.0)
+        ao["tsvd_vmax_ms"] = autoconvertir_velocidad_ms(sanitizar_y_convertir_numero(ao.get("tsvd_vmax_ms")))
+        ao["tsvd_ivt_cm"] = sanitizar_y_convertir_numero(ao.get("tsvd_ivt_cm"))
+        ao["acct_pulmonar_ms"] = autoconvertir_tiempo_ms(sanitizar_y_convertir_numero(ao.get("acct_pulmonar_ms")))
+
+    # 9. Válvulas
     valv = data.get("valvulas", {})
     if isinstance(valv, dict):
-        for k in ["aortica_vmax_ms", "aortica_grad_medio_mmhg", "aortica_area_cm2"]:
-            valv[k] = sanitizar_y_convertir_numero(valv.get(k))
-        for k in ["aortica_insuficiencia", "mitral_insuficiencia", "mitral_estenosis", "tricuspide_insuficiencia", "pulmonar_insuficiencia"]:
+        valv["aortica_vmax_ms"] = autoconvertir_velocidad_ms(sanitizar_y_convertir_numero(valv.get("aortica_vmax_ms")))
+        valv["aortica_grad_max_mmhg"] = sanitizar_y_convertir_numero(valv.get("aortica_grad_max_mmhg"))
+        valv["aortica_grad_medio_mmhg"] = sanitizar_y_convertir_numero(valv.get("aortica_grad_medio_mmhg"))
+        valv["aortica_area_cm2"] = sanitizar_y_convertir_numero(valv.get("aortica_area_cm2"))
+        valv["pulmonar_vmax_ms"] = autoconvertir_velocidad_ms(sanitizar_y_convertir_numero(valv.get("pulmonar_vmax_ms")))
+        valv["pulmonar_grad_max_mmhg"] = sanitizar_y_convertir_numero(valv.get("pulmonar_grad_max_mmhg"))
+        for k in ["aortica_insuficiencia", "mitral_insuficiencia", "mitral_estenosis", "tricuspide_insuficiencia", "pulmonar_insuficiencia", "hallazgos_descriptivos_adicionales"]:
             valv[k] = sanitizar_texto(valv.get(k))
+        if extra_de_mov and not valv.get("hallazgos_descriptivos_adicionales"):
+            valv["hallazgos_descriptivos_adicionales"] = extra_de_mov
 
+    # 10. Pericardio y Vena Cava
     pc = data.get("pericardio_cava", {})
     if isinstance(pc, dict):
-        pc["cava_inferior_diametro_mm"] = sanitizar_y_convertir_numero(pc.get("cava_inferior_diametro_mm"))
-        pc["cava_colapso_porcentaje"] = sanitizar_y_convertir_numero(pc.get("cava_colapso_porcentaje"))
+        pc["derrame_pericardico"] = sanitizar_texto(pc.get("derrame_pericardico"))
+        pc["cava_inferior_diametro_mm"] = autoconvertir_cm_a_mm(sanitizar_y_convertir_numero(pc.get("cava_inferior_diametro_mm")), 5.0)
+        pc["cava_inferior_inspiracion_mm"] = autoconvertir_cm_a_mm(sanitizar_y_convertir_numero(pc.get("cava_inferior_inspiracion_mm")), 5.0)
+        colapso = sanitizar_y_convertir_numero(pc.get("cava_colapso_porcentaje"))
+        if colapso is not None and 0 < colapso <= 1.0:
+            colapso = round(colapso * 100.0, 1)  # 0.79 -> 79.0%
+        pc["cava_colapso_porcentaje"] = colapso
 
     return data
 
 
 # ====================================================================
-# CÁLCULO DE RECALL CLÍNICO (PROBLEMA 5: ROBUSTO Y VERIFICADO)
+# CÁLCULO DE RECALL CLÍNICO (VERIFICACIÓN EN VIVO CON SUB-CÁLCULO PSAP)
 # ====================================================================
 def calcular_recall_clinico(json_data: dict, ocr_texto: str) -> Dict[str, Any]:
     ocr_lower = ocr_texto.lower()
     variables_en_ocr = 0
     variables_recuperadas = 0
     detalle_variables = []
+
+    # Asegurar que si hay gradiente IT se pre-calcule PSAP antes del check de recall
+    hemo = json_data.get("hemodinamica_derecha", {})
+    if isinstance(hemo, dict) and hemo.get("psap_calculada_mmhg") is None:
+        grad_it = hemo.get("gradiente_it_pico_mmhg")
+        pad = hemo.get("pad_estimada_mmhg") or CLINICAL_CONFIG["PAD_INSTITUCIONAL"]
+        if grad_it is not None:
+            hemo["psap_calculada_mmhg"] = round(grad_it + pad, 2)
 
     def obtener_valor_anidado(d, ruta):
         actual = d
@@ -393,12 +632,15 @@ def calcular_recall_clinico(json_data: dict, ocr_texto: str) -> Dict[str, Any]:
 
 
 # ====================================================================
-# MOTOR ROSS V12.0 - SÍNTESIS CLÍNICA AVANZADA Y AUDITADA
+# MOTOR ROSS V12.1 - SÍNTESIS CLÍNICA AVANZADA Y AUDITADA (ASE/EACVI)
 # ====================================================================
 def motor_ross_y_sintesis_estricta_v12(data: dict, recall_res: dict, tiempo_total: float, archivo_nombre: str) -> dict:
     hallazgos_relevantes = []
     alertas = []
     
+    pac = data.get("paciente", {})
+    es_mujer = pac.get("sexo") == "femenino"
+
     vi = data.get("ventriculo_izquierdo", {})
     fevi = vi.get("fevi_porcentaje")
     vtd = vi.get("volumen_telediastolico_ml")
@@ -407,33 +649,42 @@ def motor_ross_y_sintesis_estricta_v12(data: dict, recall_res: dict, tiempo_tota
     dtsvi = vi.get("dtsvi_mm")
     siv = vi.get("siv_mm")
     ppvi = vi.get("ppvi_mm")
+    rwt = vi.get("rwt")
     masa = vi.get("masa_miocardica_g")
     imasa = vi.get("indice_masa_miocardica_g_m2")
     movilidad = vi.get("movilidad_anormal_descripcion")
 
-    # 1. Evaluación Sistólica VI (Problema 1: FEVI normal NO entra en hallazgos relevantes)
+    # 1. Evaluación Sistólica VI (Corrección del Bug de Severidad y Ajuste por Sexo ASE)
+    umbral_fevi_normal = 54.0 if es_mujer else 52.0
     func_txt = None
+    grado_disfuncion_vi = None
+
     if fevi is not None:
-        if fevi < 52.0:
-            if 41.0 <= fevi < 52.0:
-                func_txt = f"disfunción sistólica ventricular izquierda leve (FEVI: {fevi}%)"
-                hallazgos_relevantes.append({"categoria": "ventriculo_izquierdo", "hallazgo": f"Disfunción sistólica leve (FEVI: {fevi}%)"})
+        if fevi < umbral_fevi_normal:
+            if 41.0 <= fevi < umbral_fevi_normal:
+                grado_disfuncion_vi = "leve"
             elif 30.0 <= fevi < 41.0:
-                func_txt = f"disfunción sistólica ventricular izquierda moderada (FEVI: {fevi}%)"
-                hallazgos_relevantes.append({"categoria": "ventriculo_izquierdo", "hallazgo": f"Disfunción sistólica moderada (FEVI: {fevi}%)"})
+                grado_disfuncion_vi = "moderada"
             else:
-                func_txt = f"disfunción sistólica ventricular izquierda severa (FEVI: {fevi}%)"
-                hallazgos_relevantes.append({"categoria": "ventriculo_izquierdo", "hallazgo": f"Disfunción sistólica severa (FEVI: {fevi}%)"})
+                grado_disfuncion_vi = "severa"
+            
+            func_txt = f"disfunción sistólica ventricular izquierda {grado_disfuncion_vi} (FEVI: {fevi}%)"
+            hallazgos_relevantes.append({
+                "categoria": "ventriculo_izquierdo", 
+                "hallazgo": f"Disfunción sistólica {grado_disfuncion_vi} (FEVI: {fevi}%)"
+            })
         else:
             func_txt = f"función sistólica global conservada (FEVI: {fevi}%)"
 
-    # 2. Trazabilidad de Dilatación VI (Volumen vs Diámetro)
+    # 2. Trazabilidad de Dilatación VI (Ajustada por Sexo)
+    umbral_dtdvi = 52.0 if es_mujer else 58.0
+    umbral_vtd = 106.0 if es_mujer else 150.0
     dilatacion_vi = False
     causa_dilatacion = None
-    if vtd is not None and vtd > 160.0:
+    if vtd is not None and vtd > umbral_vtd:
         dilatacion_vi = True
         causa_dilatacion = "volumen"
-    elif dtdvi is not None and dtdvi > 58.0:
+    elif dtdvi is not None and dtdvi > umbral_dtdvi:
         dilatacion_vi = True
         causa_dilatacion = "diámetro"
 
@@ -442,22 +693,41 @@ def motor_ross_y_sintesis_estricta_v12(data: dict, recall_res: dict, tiempo_tota
         alertas.append(alerta_dil)
         hallazgos_relevantes.append({"categoria": "ventriculo_izquierdo", "hallazgo": f"Dilatación ventricular izquierda ({causa_dilatacion})", "evidencia": {"VTD": vtd, "DTDVI": dtdvi}})
 
-    # 3. Problema 2: Aprovechamiento Clínico de Masa e Índice de Masa VI
+    # 3. Geometría Ventricular: Masa, Índice de Masa y RWT (Guías ASE)
+    umbral_imasa = 95.0 if es_mujer else 115.0
+    umbral_masa = 162.0 if es_mujer else 224.0
     hipertrofia_vi = False
-    if imasa is not None and imasa > 115.0:
-        hipertrofia_vi = True
-        hallazgos_relevantes.append({"categoria": "ventriculo_izquierdo", "hallazgo": f"Aumento del índice de masa miocárdica ({imasa} g/m²)"})
-    elif masa is not None and masa > 224.0:
-        hipertrofia_vi = True
-        hallazgos_relevantes.append({"categoria": "ventriculo_izquierdo", "hallazgo": f"Aumento de masa miocárdica ({masa} g)"})
+    remodelado_concentrico = False
+    geometria_txt = None
 
-    # 4. Motilidad Segmentaria Extrema (Hallazgo Dominante)
+    if imasa is not None and imasa > umbral_imasa:
+        hipertrofia_vi = True
+        if rwt is not None:
+            tipo_hvi = "concéntrica" if rwt > 0.42 else "excéntrica"
+            geometria_txt = f"Hipertrofia ventricular izquierda {tipo_hvi} (índice de masa: {imasa} g/m², RWT: {rwt})"
+        else:
+            geometria_txt = f"Hipertrofia ventricular izquierda (índice de masa: {imasa} g/m²)"
+        hallazgos_relevantes.append({"categoria": "ventriculo_izquierdo", "hallazgo": geometria_txt})
+    elif masa is not None and masa > umbral_masa:
+        hipertrofia_vi = True
+        geometria_txt = f"Aumento de la masa miocárdica ({masa} g)"
+        hallazgos_relevantes.append({"categoria": "ventriculo_izquierdo", "hallazgo": geometria_txt})
+    elif rwt is not None and rwt > 0.42:
+        remodelado_concentrico = True
+        geometria_txt = f"Remodelado concéntrico del ventrículo izquierdo (RWT: {rwt})"
+        hallazgos_relevantes.append({"categoria": "ventriculo_izquierdo", "hallazgo": geometria_txt})
+
+    # 4. Motilidad Segmentaria (Solo si es genuinamente anormal)
     if movilidad:
-        hallazgos_relevantes.append({"categoria": "motilidad", "hallazgo": f"Trastorno extenso de motilidad segmentaria: {movilidad}"})
+        hallazgos_relevantes.append({"categoria": "motilidad", "hallazgo": f"Alteración de la motilidad segmentaria: {movilidad}"})
 
-    # 5. Hemodinamia y PSAP
+    # 5. Hemodinamia y PSAP (Persistencia en JSON garantizada)
     hemo = data.get("hemodinamica_derecha", {})
-    psap = hemo.get("psap_calculada_mmhg") or (hemo.get("gradiente_it_pico_mmhg") + CLINICAL_CONFIG["PAD_INSTITUCIONAL"] if hemo.get("gradiente_it_pico_mmhg") is not None else None)
+    pad_usada = hemo.get("pad_estimada_mmhg") or CLINICAL_CONFIG["PAD_INSTITUCIONAL"]
+    psap = hemo.get("psap_calculada_mmhg")
+    if psap is None and hemo.get("gradiente_it_pico_mmhg") is not None:
+        psap = round(hemo.get("gradiente_it_pico_mmhg") + pad_usada, 2)
+        hemo["psap_calculada_mmhg"] = psap
     
     hap_txt = None
     if psap is not None:
@@ -469,7 +739,7 @@ def motor_ross_y_sintesis_estricta_v12(data: dict, recall_res: dict, tiempo_tota
                 hap_txt = f"presión sistólica de arteria pulmonar estimada en {psap} mmHg (alta probabilidad de hipertensión pulmonar)"
                 hallazgos_relevantes.append({"categoria": "hemodinamica", "hallazgo": "Alta probabilidad de hipertensión pulmonar", "PSAP": psap})
         else:
-            hap_txt = f"PSAP estimada en {psap} mmHg"
+            hap_txt = f"PSAP estimada en {psap} mmHg (dentro de límites normales)"
 
     # 6. Función Diastólica
     fd = data.get("funcion_diastolica_bruta", {})
@@ -479,28 +749,30 @@ def motor_ross_y_sintesis_estricta_v12(data: dict, recall_res: dict, tiempo_tota
     
     diastole_txt = None
     if e_e_prime is not None and e_e_prime > 14.0:
-        diastole_txt = f"elevación de las presiones de llenado ventricular izquierdo (E/e' = {e_e_prime})"
+        diastole_txt = f"elevación de las presiones de llenado ventricular izquierdo (E/e' promedio = {e_e_prime})"
         hallazgos_relevantes.append({"categoria": "funcion_diastolica", "hallazgo": f"Presiones de llenado VI elevadas (E/e' = {e_e_prime})"})
     elif e_wave is not None and a_wave is not None and e_wave < a_wave:
-        diastole_txt = "alteración de la relajación miocárdica"
+        diastole_txt = f"alteración de la relajación miocárdica (patrón E < A, relación E/A de {fd.get('relacion_e_a')})"
+        hallazgos_relevantes.append({"categoria": "funcion_diastolica", "hallazgo": "Disfunción diastólica grado I (alteración de la relajación)"})
 
-    # 7. Función VD (TAPSE + S')
+    # 7. Función VD (TAPSE + S' + CAFVD)
     vd = data.get("ventriculo_derecho", {})
     vd_basal = vd.get("diametro_basal_mm")
     tapse = vd.get("tapse_mm")
     onda_s = vd.get("onda_s_cm_s")
+    cafvd = vd.get("cafvd_porcentaje")
     
     vd_disfuncion = False
-    if (tapse is not None and tapse < 16.0) or (onda_s is not None and onda_s < 9.5):
+    if (tapse is not None and tapse < 17.0) or (onda_s is not None and onda_s < 9.5) or (cafvd is not None and cafvd < 35.0):
         vd_disfuncion = True
-        hallazgos_relevantes.append({"categoria": "ventriculo_derecho", "hallazgo": f"Disfunción sistólica ventricular derecha (TAPSE: {tapse} mm, S': {onda_s} cm/s)"})
+        hallazgos_relevantes.append({"categoria": "ventriculo_derecho", "hallazgo": f"Disfunción sistólica ventricular derecha (TAPSE: {tapse} mm, CAFVD: {cafvd}%)"})
 
     pc = data.get("pericardio_cava", {})
     derrame = pc.get("derrame_pericardico")
     if derrame:
         hallazgos_relevantes.append({"categoria": "pericardio", "hallazgo": f"Derrame pericárdico {derrame}"})
 
-    # 8. Auditoría AI (Problema 4: Diámetro AP elevado sin LAVI genera marcador interno de revisión, no conclusión automatizada de dilatación)
+    # 8. Auditoría AI
     ai = data.get("auricula_izquierda", {})
     ai_ap = ai.get("diametro_ap_mm")
     ai_vol = ai.get("volumen_ml")
@@ -513,21 +785,25 @@ def motor_ross_y_sintesis_estricta_v12(data: dict, recall_res: dict, tiempo_tota
         ai_dilatacion_confirmada = True
         hallazgos_relevantes.append({"categoria": "auricula_izquierda", "hallazgo": f"Dilatación auricular izquierda (LAVI: {ai_index} ml/m²)"})
     elif ai_ap is not None and ai_ap > 40.0 and ai_index is None:
-        ai_marcador_revision = True  # Marcador interno de revisión por AP elevado sin LAVI
+        ai_marcador_revision = True
 
-    # 9. Descripción Ecocardiográfica (Fluida, Natural)
+    # 9. Descripción Ecocardiográfica (Fluida, Natural y Completa)
     frases_desc = []
 
     vi_fragmentos = []
     if dtdvi or dtsvi: vi_fragmentos.append(f"diámetros de {dtdvi} mm en telediástole y {dtsvi} mm en telesístole")
     if vtd or vts: vi_fragmentos.append(f"volúmenes cavitarios con VTD de {vtd} ml y VTS de {vts} ml")
-    if siv or ppvi: vi_fragmentos.append(f"espesores parietales de SIV: {siv} mm y PPVI: {ppvi} mm")
+    if siv or ppvi:
+        esp_str = f"espesores parietales de SIV: {siv} mm y PPVI: {ppvi} mm"
+        if rwt is not None: esp_str += f" (RWT: {rwt})"
+        vi_fragmentos.append(esp_str)
     if masa or imasa: vi_fragmentos.append(f"masa miocárdica de {masa} g (índice de masa: {imasa} g/m²)")
     
     if vi_fragmentos or func_txt or movilidad:
         base_vi = "Se observa ventrículo izquierdo con " + ", ".join(vi_fragmentos) if vi_fragmentos else "Ventrículo izquierdo"
         if func_txt: base_vi += f", evidenciando {func_txt}"
         if movilidad: base_vi += f". Se aprecian alteraciones segmentarias caracterizadas por {movilidad}"
+        else: base_vi += ", sin alteraciones de la movilidad global ni segmentaria"
         frases_desc.append(base_vi + ".")
 
     if ai_ap or ai_vol or ai_index or ai_area:
@@ -544,10 +820,11 @@ def motor_ross_y_sintesis_estricta_v12(data: dict, recall_res: dict, tiempo_tota
             ai_str += " (Nota: Diámetro AP elevado pendiente de correlación volumétrica)."
         frases_desc.append(ai_str)
 
-    if vd_basal or tapse or onda_s:
+    if vd_basal or tapse or onda_s or cafvd:
         vd_parts = []
         if vd_basal: vd_parts.append(f"diámetro basal de {vd_basal} mm")
         if tapse: vd_parts.append(f"TAPSE de {tapse} mm")
+        if cafvd: vd_parts.append(f"CAFVD de {cafvd}%")
         if onda_s: vd_parts.append(f"onda tisular S' de {onda_s} cm/s")
         
         vd_str = f"Cavidades derechas con ventrículo que muestra {', '.join(vd_parts)}."
@@ -557,8 +834,22 @@ def motor_ross_y_sintesis_estricta_v12(data: dict, recall_res: dict, tiempo_tota
 
     ad = data.get("auricula_derecha", {})
     ad_area = ad.get("area_cm2")
-    if ad_area:
-        frases_desc.append(f"Aurícula derecha con área de {ad_area} cm².")
+    ad_vol = ad.get("volumen_ml")
+    ad_ivol = ad.get("volumen_indexado_ml_m2")
+    if ad_area or ad_vol or ad_ivol:
+        ad_parts = []
+        if ad_area: ad_parts.append(f"área de {ad_area} cm²")
+        if ad_vol: ad_parts.append(f"volumen de {ad_vol} ml")
+        if ad_ivol: ad_parts.append(f"volumen indexado de {ad_ivol} ml/m²")
+        frases_desc.append(f"Aurícula derecha con {', '.join(ad_parts)}.")
+
+    ao = data.get("aorta_y_tractos", {})
+    if ao.get("raiz_aortica_mm") or ao.get("senos_valsalva_mm") or ao.get("union_st_mm"):
+        ao_parts = []
+        if ao.get("raiz_aortica_mm"): ao_parts.append(f"anillo/raíz de {ao['raiz_aortica_mm']} mm")
+        if ao.get("senos_valsalva_mm"): ao_parts.append(f"senos de Valsalva de {ao['senos_valsalva_mm']} mm")
+        if ao.get("union_st_mm"): ao_parts.append(f"unión sinotubular de {ao['union_st_mm']} mm")
+        frases_desc.append(f"Raíz aórtica con {', '.join(ao_parts)}.")
 
     valv = data.get("valvulas", {})
     valv_textos = []
@@ -576,10 +867,15 @@ def motor_ross_y_sintesis_estricta_v12(data: dict, recall_res: dict, tiempo_tota
             valv_textos.append(f"insuficiencia {v_label} {grado}")
 
     if valv_textos:
-        frases_desc.append(f"A examen Doppler se identifica: {', '.join(valv_textos)}.")
+        frases_desc.append(f"Al examen Doppler se identifica: {', '.join(valv_textos)}.")
+    if valv.get("hallazgos_descriptivos_adicionales"):
+        frases_desc.append(f"Hallazgos valvulares/estructurales: {valv['hallazgos_descriptivos_adicionales']}.")
+        hallazgos_relevantes.append({"categoria": "valvulas", "hallazgo": valv["hallazgos_descriptivos_adicionales"]})
 
     if diastole_txt:
         frases_desc.append(f"En el análisis diastólico se observa {diastole_txt}.")
+    elif e_e_prime is not None:
+        frases_desc.append(f"Función diastólica con relación E/e' promedio de {e_e_prime} (presiones de llenado normales).")
 
     if hap_txt:
         frases_desc.append(f"En la evaluación hemodinámica se registra {hap_txt}.")
@@ -588,7 +884,7 @@ def motor_ross_y_sintesis_estricta_v12(data: dict, recall_res: dict, tiempo_tota
     cava_col = pc.get("cava_colapso_porcentaje")
     if cava_d is not None:
         cava_str = f"Vena cava inferior de {cava_d} mm"
-        if cava_col is not None: cava_str += f" con colapso de {cava_col}%"
+        if cava_col is not None: cava_str += f" con colapso inspiratorio de {cava_col}%"
         frases_desc.append(cava_str + ".")
 
     if derrame:
@@ -596,25 +892,27 @@ def motor_ross_y_sintesis_estricta_v12(data: dict, recall_res: dict, tiempo_tota
 
     descripcion_corrida = " ".join(frases_desc)
 
-    # 10. Conclusiones Clínicas (Estrictamente patológicas / Relevantes)
+    # 10. Conclusiones Clínicas (Estrictamente Patológicas y Sincronizadas)
     conclusiones = []
     
-    if fevi is not None and fevi < 52.0:
-        conclusiones.append(f"Disfunción sistólica ventricular izquierda severa (FEVI: {fevi}%).")
+    if grado_disfuncion_vi:
+        conclusiones.append(f"Disfunción sistólica ventricular izquierda {grado_disfuncion_vi} (FEVI: {fevi}%).")
     if dilatacion_vi:
         conclusiones.append(f"Dilatación ventricular izquierda a expensas de {causa_dilatacion}.")
-    if hipertrofia_vi:
-        conclusiones.append(f"Aumento de la masa miocárdica (índice de masa: {imasa} g/m²)." if imasa else f"Aumento de la masa miocárdica ({masa} g).")
+    if hipertrofia_vi or remodelado_concentrico:
+        conclusiones.append(f"{geometria_txt}.")
     if ai_dilatacion_confirmada:
         conclusiones.append(f"Dilatación auricular izquierda (LAVI: {ai_index} ml/m²).")
     if vd_disfuncion:
-        conclusiones.append(f"Disfunción sistólica del ventrículo derecho (TAPSE: {tapse} mm, S': {onda_s} cm/s).")
+        conclusiones.append(f"Disfunción sistólica del ventrículo derecho (TAPSE: {tapse} mm).")
     if diastole_txt:
         conclusiones.append(f"Disfunción diastólica con {diastole_txt}.")
     if psap is not None and psap >= CLINICAL_CONFIG["UMBRAL_HAP_BAJA"]:
         conclusiones.append(f"Elevación de la presión pulmonar sistólica estimada en {psap} mmHg.")
     if movilidad:
-        conclusiones.append(f"Trastorno extenso de la motilidad parietal segmentaria: {movilidad}.")
+        conclusiones.append(f"Trastorno de la motilidad parietal segmentaria: {movilidad}.")
+    if valv.get("hallazgos_descriptivos_adicionales"):
+        conclusiones.append(f"{valv['hallazgos_descriptivos_adicionales']}.")
     if derrame:
         conclusiones.append(f"Derrame pericárdico {derrame}.")
 
@@ -622,34 +920,39 @@ def motor_ross_y_sintesis_estricta_v12(data: dict, recall_res: dict, tiempo_tota
     if not conclusiones:
         conclusiones.append("Estudio ecocardiográfico sin alteraciones estructurales o funcionales mayores consignadas.")
 
-    # 11. Problema 1 & 3: Diagnóstico Final (Jerarquía Patológica Dominada por Motilidad e Insuficiencia VI; Cero FEVI Normal en Diagnóstico)
+    # 11. Diagnóstico Final (Sincronizado con Grado Real de FEVI y Geometría)
     diag_componentes = []
     
-    # Jerarquía superior: Motilidad y función sistólica patológica
     if movilidad:
-        diag_componentes.append(f"compromiso segmentario extenso ({movilidad})")
+        diag_componentes.append(f"compromiso segmentario ({movilidad})")
     
-    if fevi is not None and fevi < 52.0:
-        diag_componentes.append(f"disfunción sistólica ventricular izquierda severa (FEVI: {fevi}%)")
+    if grado_disfuncion_vi:
+        diag_componentes.append(f"disfunción sistólica ventricular izquierda {grado_disfuncion_vi} (FEVI: {fevi}%)")
     
     if dilatacion_vi: 
         diag_componentes.append(f"dilatación ventricular izquierda ({causa_dilatacion})")
         
-    if hipertrofia_vi: 
-        diag_componentes.append(f"aumento de masa miocárdica ({imasa} g/m²)" if imasa else f"aumento de masa miocárdica ({masa} g)")
+    if hipertrofia_vi or remodelado_concentrico: 
+        diag_componentes.append(geometria_txt.lower())
         
     if ai_dilatacion_confirmada: 
-        diag_componentes.append("remodelado auricular izquierdo")
+        diag_componentes.append(f"dilatación auricular izquierda (LAVI: {ai_index} ml/m²)")
         
     if vd_disfuncion: 
         diag_componentes.append("afectación de la función sistólica del ventrículo derecho")
         
     if diastole_txt: 
-        diag_componentes.append("alteración de las presiones de llenado diastólico")
+        diag_componentes.append(diastole_txt)
 
-    valv_significativas = [f"insuficiencia {v_label} {valv.get(vk)}" for vk, v_label in [("aortica_insuficiencia", "aórtica"), ("mitral_insuficiencia", "mitral"), ("tricuspide_insuficiencia", "tricuspídea")] if valv.get(vk) and any(t in str(valv.get(vk)).lower() for t in ["moderada", "severa", "importante"])]
+    valv_significativas = [
+        f"insuficiencia {v_label} {valv.get(vk)}" 
+        for vk, v_label in [("aortica_insuficiencia", "aórtica"), ("mitral_insuficiencia", "mitral"), ("tricuspide_insuficiencia", "tricuspídea")] 
+        if valv.get(vk) and any(t in str(valv.get(vk)).lower() for t in ["moderada", "severa", "importante"])
+    ]
     if valv_significativas:
         diag_componentes.append("valvulopatía asociada tipo " + " y ".join(valv_significativas))
+    elif valv.get("hallazgos_descriptivos_adicionales"):
+        diag_componentes.append(valv["hallazgos_descriptivos_adicionales"].lower())
 
     if derrame:
         diag_componentes.append(f"con derrame pericárdico {derrame}")
@@ -659,16 +962,17 @@ def motor_ross_y_sintesis_estricta_v12(data: dict, recall_res: dict, tiempo_tota
     else:
         diagnostico_final = "Impresión diagnóstica: Ecocardiograma transtorácico sin alteraciones patológicas relevantes evaluadas."
 
-    # 12. JSON Maestro v12.0 Completo y Trazable
+    # 12. JSON Maestro v12.1 Completo y Trazable
     json_maestro = {
-        "paciente": data.get("paciente", {}),
+        "paciente": pac,
         "variables_ecocardiograficas": {
             "ventriculo_izquierdo": vi,
             "auricula_izquierda": ai,
             "ventriculo_derecho": vd,
-            "auricula_derecha": data.get("auricula_derecha", {}),
+            "auricula_derecha": ad,
             "hemodinamica_derecha": hemo,
             "funcion_diastolica_bruta": fd,
+            "aorta_y_tractos": ao,
             "valvulas": valv,
             "pericardio_cava": pc
         },
@@ -684,7 +988,7 @@ def motor_ross_y_sintesis_estricta_v12(data: dict, recall_res: dict, tiempo_tota
             "fecha_procesamiento": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "archivo_fuente": archivo_nombre,
             "tiempo_total_segundos": tiempo_total,
-            "version_motor": "CardioAgente Extractor Maestro v12.0 (Auditoría Final)"
+            "version_motor": "CardioAgente Extractor Maestro v12.1 (Chison Dual & Autocalibrado)"
         }
     }
 
@@ -692,7 +996,7 @@ def motor_ross_y_sintesis_estricta_v12(data: dict, recall_res: dict, tiempo_tota
 
 
 # ====================================================================
-# INTERFAZ STREAMLIT - APLICACIÓN 1 (V12.0)
+# INTERFAZ STREAMLIT - APLICACIÓN 1 (V12.1)
 # ====================================================================
 col1, col2 = st.columns([1, 1], gap="medium")
 
@@ -709,7 +1013,7 @@ if uploaded_file is not None:
             st.warning("⚠️ Ingrese su API Key de Gemini en el panel lateral.")
     else:
         with col1:
-            if st.button("🚀 Ejecutar Extracción y Cerebro Clínico v12.0", use_container_width=True):
+            if st.button("🚀 Ejecutar Extracción y Cerebro Clínico v12.1", use_container_width=True):
                 status_placeholder = st.empty()
                 
                 try:
@@ -720,7 +1024,7 @@ if uploaded_file is not None:
                     file_bytes = uploaded_file.read()
                     texto_ocr, reporte_ocr = extraer_pdf_adaptativo(file_bytes)
 
-                    # 2. Llamada única a Gemini
+                    # 2. Llamada única a Gemini (Manteniendo gemini-3.8-flash)
                     status_placeholder.info("🔄 Extrayendo datos estructurados con Gemini (1 sola llamada)...")
                     client = genai.Client(api_key=api_key)
                     config_gen = types.GenerateContentConfig(temperature=0.0)
@@ -741,8 +1045,8 @@ if uploaded_file is not None:
                     if not valido:
                         raise ValueError(f"Fallo de validación en Extracción: {msg}")
 
-                    # 3. Normalización y Síntesis v12.0
-                    status_placeholder.info("🔄 Ejecutando normalización y síntesis clínica definitiva...")
+                    # 3. Normalización y Síntesis v12.1
+                    status_placeholder.info("🔄 Ejecutando normalización fisiológica y síntesis clínica...")
                     json_normalizado = normalizar_datos(json_crudo)
                     recall_res = calcular_recall_clinico(json_normalizado, texto_ocr)
                     
@@ -766,17 +1070,17 @@ if uploaded_file is not None:
                     })
                     guardar_historial_disco(historial)
 
-                    status_placeholder.success(f"✅ JSON Maestro v12.0 generado con éxito en {tiempo_total}s (Recall Clínico: {recall_res['recall_clinico_pct']}%)")
+                    status_placeholder.success(f"✅ JSON Maestro v12.1 generado con éxito en {tiempo_total}s (Recall Clínico: {recall_res['recall_clinico_pct']}%)")
 
                 except Exception as e:
                     status_placeholder.error(f"❌ Error crítico en el Extractor: {str(e)}")
 
 # ====================================================================
-# VISUALIZACIÓN Y DESCARGA DEL JSON MAESTRO V12.0
+# VISUALIZACIÓN Y DESCARGA DEL JSON MAESTRO V12.1
 # ====================================================================
 if "json_maestro" in st.session_state:
     st.markdown("---")
-    st.markdown("### 📊 Inspección del JSON Maestro v12.0 (Auditoría Final)")
+    st.markdown("### 📊 Inspección del JSON Maestro v12.1 (Auditoría Final)")
     
     maestro = st.session_state["json_maestro"]
     recall = maestro.get("recall_clinico", {})
@@ -794,15 +1098,15 @@ if "json_maestro" in st.session_state:
     for idx, c in enumerate(maestro.get("conclusiones", []), 1):
         st.markdown(f"*{idx}.* {c}")
 
-    st.markdown("#### 📦 JSON Maestro v12.0 Completo")
+    st.markdown("#### 📦 JSON Maestro v12.1 Completo")
     json_str = json.dumps(maestro, ensure_ascii=False, indent=2)
     
     st.code(json_str, language="json")
     
     st.download_button(
-        label="💾 Descargar JSON Maestro v12.0",
+        label="💾 Descargar JSON Maestro v12.1",
         data=json_str,
-        file_name=f"json_maestro_v12_{maestro.get('paciente', {}).get('nombre', 'paciente').replace(' ', '_')}.json",
+        file_name=f"json_maestro_v12_{maestro.get('paciente', {}).get('nombre', 'paciente').replace(' ', '_').replace(',', '')}.json",
         mime="application/json",
         use_container_width=True
     )
