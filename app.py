@@ -2,24 +2,18 @@ import io
 import json
 import os
 import re
-import threading
 import time
 from datetime import datetime
 from typing import Optional, Dict, Any, List, Tuple
-from xml.sax.saxutils import escape
 import pdfplumber
 import streamlit as st
 from google import genai
 from google.genai import types
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import letter
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
 # ====================================================================
-# CONFIGURACIÓN Y PERSISTENCIA DE LOTE
+# CONFIGURACIÓN Y PERSISTENCIA DE LOTE (APP 1 - V10.0 CEREBRO CLÍNICO)
 # ====================================================================
-HISTORIAL_FILE = "historial_lote.json"
+HISTORIAL_FILE = "historial_lote_extractor_v10.json"
 
 def cargar_historial_disco() -> List[dict]:
     if os.path.exists(HISTORIAL_FILE):
@@ -41,19 +35,6 @@ CLINICAL_CONFIG = {
     "PAD_INSTITUCIONAL": 5.0,
     "UMBRAL_HAP_BAJA": 35.0,
     "UMBRAL_HAP_INTERMEDIA": 50.0,
-    "LIMITES_BIOLOGICOS": {
-        "edad": (0, 120),
-        "asc_m2": (0.3, 3.5),
-        "fevi_porcentaje": (5.0, 95.0),
-        "dtdvi_mm": (15.0, 120.0),
-        "vtd_ml": (10.0, 600.0),
-        "tapse_mm": (5.0, 45.0)
-    },
-    "REGLAS_DE_PROHIBICION": {
-        "motilidad_normal": "Prohibido afirmar motilidad normal sin descripción segmentaria explícita.",
-        "diastolica_normal": "Prohibido afirmar función diastólica normal o conservada si no existen parámetros suficientes evaluados.",
-        "sin_valvulopatias": "Prohibido afirmar ausencia absoluta de valvulopatías si las estructuras valvulares no fueron completamente evaluadas en la fuente."
-    }
 }
 
 PATRONES_OCR_RECALL = {
@@ -67,8 +48,8 @@ PATRONES_OCR_RECALL = {
 }
 
 st.set_page_config(
-    page_title="CardioAgente | Dr. Diego Ross Álvarez",
-    page_icon="🫀",
+    page_title="CardioAgente | Extractor Clínico Maestro v10.0",
+    page_icon="🧬",
     layout="wide",
 )
 
@@ -77,39 +58,30 @@ st.markdown("""
         .main { background-color: #F8FAFC; }
         .clinic-header {
             padding: 15px;
-            background: linear-gradient(90deg, #1A365D 0%, #2B6CB0 100%);
+            background: linear-gradient(90deg, #0F172A 0%, #1E293B 100%);
             color: white;
             border-radius: 10px;
             margin-bottom: 20px;
-        }
-        .warning-box {
-            padding: 10px;
-            background-color: #FFF5F5;
-            border-left: 5px solid #E53E3E;
-            color: #C53030;
-            margin-bottom: 10px;
-            border-radius: 4px;
-            font-size: 13px;
         }
     </style>
 """, unsafe_allow_html=True)
 
 st.markdown("""
     <div class="clinic-header">
-        <h2 style='margin:0; font-size: 24px;'>🫀 CardioAgente - Producción v7.9 (Anti-Congelamiento & Timeout)</h2>
-        <p style='margin:5px 0 0 0; font-size: 14px;'>Dr. Diego Ross Álvarez | Cardiólogo - Electrofisiólogo | Céd. Esp. 12883155</p>
+        <h2 style='margin:0; font-size: 24px;'>🧬 CardioAgente - Extractor Clínico Maestro v10.0 (Cerebro Clínico)</h2>
+        <p style='margin:5px 0 0 0; font-size: 14px;'>Dr. Diego Ross Álvarez | Redacción Humana Fluida | Cero Normalidad en Hallazgos | Diagnóstico Médico Integrado</p>
     </div>
 """, unsafe_allow_html=True)
 
 with st.sidebar:
-    st.markdown("### ⚙️ Configuración")
+    st.markdown("### ⚙️ Configuración del Cerebro Clínico")
     api_key = st.text_input("Gemini API Key", type="password")
     st.markdown("---")
-    st.info("Arquitectura v7.9:\n1. Timeout Real por Llamada y Fase\n2. Telemetría de Latencia y Tokens\n3. Alerta y Gestión de OCR Masivo\n4. Reducción de Payload de Redacción\n5. Ranking Automático de Cuellos de Botella")
+    st.info("Directiva v10.0:\n• Redacción médica natural y variada\n• Normalidad excluida de hallazgos relevantes\n• Conclusiones sin mediciones aisladas\n• Diagnóstico en formato de impresión clínica")
 
 
 # ====================================================================
-# OCR ADAPTATIVO CON GESTIÓN DE TAMAÑO (PUNTO 7)
+# OCR ADAPTATIVO
 # ====================================================================
 def extraer_pdf_adaptativo(file_bytes) -> Tuple[str, Dict[str, Any]]:
     texto_completo = ""
@@ -126,25 +98,18 @@ def extraer_pdf_adaptativo(file_bytes) -> Tuple[str, Dict[str, Any]]:
 
     caracteres = len(texto_completo)
     lineas = len(texto_completo.splitlines())
-    tokens_estimados = caracteres // 4
     alertas_ocr = []
 
     if caracteres > 35000:
-        alertas_ocr.append(f"🚨 ALERTA CRÍTICA OCR MASIVO: {caracteres} caracteres (~{tokens_estimados} tokens estimados). Alto riesgo de latencia extrema y degradación de atención.")
-    elif caracteres < 100 or lineas < 5:
-        alertas_ocr.append("⚠️ Advertencia: El PDF contiene texto insuficiente o puede ser una imagen escaneada no interpretable.")
+        alertas_ocr.append("⚠️ Advertencia: OCR excesivamente largo (>35,000 caracteres).")
+    if caracteres < 100 or lineas < 5:
+        alertas_ocr.append("⚠️ El PDF podría contener únicamente imágenes o tablas no interpretables.")
 
-    return texto_completo, {
-        "paginas": total_paginas,
-        "caracteres": caracteres,
-        "lineas": lineas,
-        "tokens_estimados": tokens_estimados,
-        "alertas_ocr": alertas_ocr
-    }
+    return texto_completo, {"paginas": total_paginas, "caracteres": caracteres, "lineas": lineas, "alertas_ocr": alertas_ocr}
 
 
 # ====================================================================
-# VALIDADORES INDEPENDIENTES
+# VALIDADOR DE EXTRACCIÓN
 # ====================================================================
 def validar_json_extraccion(texto_respuesta: str) -> Tuple[bool, str, Optional[dict]]:
     if not texto_respuesta or not texto_respuesta.strip():
@@ -168,89 +133,37 @@ def validar_json_extraccion(texto_respuesta: str) -> Tuple[bool, str, Optional[d
         return False, f"Error de parseo JSON en extracción: {str(e)}", None
 
 
-def validar_json_redaccion(texto_respuesta: str) -> Tuple[bool, str, Optional[dict]]:
-    if not texto_respuesta or not texto_respuesta.strip():
-        return False, "Respuesta vacía en Redacción.", None
-    
-    texto_limpio = texto_respuesta.strip()
-    if not texto_limpio.endswith("}") and not texto_limpio.endswith("]"):
-        return False, "JSON de redacción truncado.", None
-        
-    try:
-        parsed = json.loads(texto_limpio)
-        if not isinstance(parsed, dict):
-            return False, "El JSON de redacción no es un diccionario válido.", None
-            
-        secciones_redaccion = ["narrativa_descriptiva", "conclusiones_redactadas", "diagnostico_redactado"]
-        for sec in secciones_redaccion:
-            if sec not in parsed:
-                return False, f"Falta la sección obligatoria '{sec}' en redacción.", None
-        return True, "OK", parsed
-    except Exception as e:
-        return False, f"Error de parseo JSON en redacción: {str(e)}", None
-
-
-def validar_respuesta_auditor(texto_respuesta: str) -> Tuple[bool, str]:
-    if not texto_respuesta or not texto_respuesta.strip():
-        return False, "Respuesta vacía del Auditor."
-    return True, texto_respuesta.strip()
-
-
 # ====================================================================
-# LLAMADA SEGURA CON TIMEOUT REAL (PUNTO 1 Y 2)
+# LLAMADA SEGURA A GEMINI
 # ====================================================================
-def llamada_segura_gemini(client, model_name: str, contents: list, config_gen: types.GenerateContentConfig, max_retries=3, timeout_segundos=25):
+def llamada_segura_gemini(client, model_name: str, contents: list, config_gen: types.GenerateContentConfig, max_retries=3):
     t_inicio = time.time()
-    
-    prompt_texto = str(contents)
-    tam_prompt = len(prompt_texto)
-    tokens_prompt = tam_prompt // 4
-
-    resultado_contenedor = {}
-
-    def worker():
+    delay = 2
+    for intento in range(max_retries):
         try:
-            resp = client.models.generate_content(
+            response = client.models.generate_content(
                 model=model_name,
                 contents=contents,
                 config=config_gen,
             )
-            resultado_contenedor["response"] = resp
-        except Exception as ex:
-            resultado_contenedor["exception"] = ex
-
-    hilo = threading.Thread(target=worker)
-    hilo.start()
-    hilo.join(timeout=timeout_segundos)
-
-    if hilo.is_alive():
-        duracion = round(time.time() - t_inicio, 3)
-        raise TimeoutError(f"⏰ TIMEOUT REAL: La llamada a Gemini ({model_name}) superó el límite de {timeout_segundos}s (Duración parcial: {duracion}s).")
-
-    if "exception" in resultado_contenedor:
-        raise resultado_contenedor["exception"]
-
-    response = resultado_contenedor.get("response")
+            duracion = round(time.time() - t_inicio, 3)
+            return response, duracion
+        except Exception as e:
+            error_str = str(e)
+            if "503" in error_str or "UNAVAILABLE" in error_str or "high demand" in error_str.lower() or "rate limit" in error_str.lower() or "timeout" in error_str.lower():
+                if intento < max_retries - 1:
+                    time.sleep(delay)
+                    delay *= 2
+                    continue
+            raise e
     duracion = round(time.time() - t_inicio, 3)
-    tam_respuesta = len(response.text) if response and response.text else 0
-    tokens_respuesta = tam_respuesta // 4
-
-    telemetria_llamada = {
-        "modelo": model_name,
-        "tam_prompt_chars": tam_prompt,
-        "tokens_prompt_est": tokens_prompt,
-        "tam_respuesta_chars": tam_respuesta,
-        "tokens_respuesta_est": tokens_respuesta,
-        "duracion_s": duracion
-    }
-
-    return response, telemetria_llamada
+    raise Exception(f"Error de red/modelo en {model_name} tras reintentos (Duración: {duracion}s).")
 
 
 # ====================================================================
-# PROMPTS Y ESQUEMAS DE PRODUCCIÓN
+# PROMPT DE EXTRACCIÓN ESTRICTA
 # ====================================================================
-PROMPT_FASE_1_EXTRACCION = """
+PROMPT_EXTRACCION = """
 Eres un motor de extracción de datos médicos altamente preciso especializado en ecocardiografía. Tu ÚNICA tarea es extraer los valores numéricos y métricas exactas del texto del informe proporcionado y volcarlos en el siguiente esquema JSON.
 
 REGLAS CRÍTICAS ABSOLUTAS:
@@ -324,18 +237,6 @@ ESTRUCTURA DE SALIDA OBLIGATORIA (JSON PURO SIN MARKDOWN):
 }
 """
 
-PROMPT_FASE_3_REDACCION = """
-Eres un médico cardiólogo especialista en ecocardiografía que redacta exclusivamente utilizando el estilo formal, sobrio, elegante y clínico del Dr. Diego Ross Álvarez.
-
-Recibirás únicamente los hechos clínicos estructurados y hallazgos relevantes procesados por el motor determinista. Redacta la descripción ecocardiográfica institucional, la sección de conclusiones y el diagnóstico final.
-Devuelve un objeto JSON puro (sin markdown) con esta estructura estricta:
-{
-  "narrativa_descriptiva": "...",
-  "conclusiones_redactadas": ["...", "...", "...", "...", "...", "...", "..."],
-  "diagnostico_redactado": "..."
-}
-"""
-
 
 # ====================================================================
 # SANITIZACIÓN Y NORMALIZACIÓN
@@ -357,7 +258,6 @@ def sanitizar_y_convertir_numero(val: Any) -> Optional[float]:
                 return None
     return None
 
-
 def sanitizar_texto(val: Any) -> Optional[str]:
     if val is None:
         return None
@@ -375,8 +275,7 @@ def sanitizar_texto(val: Any) -> Optional[str]:
         
     return val_clean
 
-
-def fase_1_5_normalizacion(data: dict) -> dict:
+def normalizar_datos(data: dict) -> dict:
     if not isinstance(data, dict):
         return data
 
@@ -485,135 +384,259 @@ def calcular_recall_clinico(json_data: dict, ocr_texto: str) -> Dict[str, Any]:
 
 
 # ====================================================================
-# MOTOR ROSS DETERMINISTA
+# MOTOR ROSS V10.0 - SÍNTESIS CLÍNICA HUMANA Y RIGUROSA
 # ====================================================================
-def fase_2_motor_ross_determinista(data: dict) -> dict:
+def motor_ross_y_sintesis_estricta_v10(data: dict, recall_res: dict, tiempo_total: float, archivo_nombre: str) -> dict:
     hallazgos_relevantes = []
-    limitaciones_del_estudio = []
+    alertas = []
     
-    vi = data.setdefault("ventriculo_izquierdo", {})
+    vi = data.get("ventriculo_izquierdo", {})
     fevi = vi.get("fevi_porcentaje")
     vtd = vi.get("volumen_telediastolico_ml")
     dtdvi = vi.get("dtdvi_mm")
+    dtsvi = vi.get("dtsvi_mm")
+    siv = vi.get("siv_mm")
+    ppvi = vi.get("ppvi_mm")
+    movilidad = vi.get("movilidad_anormal_descripcion")
 
+    # 1. Evaluación Sistólica VI (Normalidad NO entra en hallazgos_relevantes)
+    func_txt = None
     if fevi is not None:
-        if fevi >= 52.0: func_sist_txt = "Función sistólica global del ventrículo izquierdo conservada."
-        elif 41.0 <= fevi < 52.0: func_sist_txt = "Disfunción sistólica ventricular izquierda leve."
-        elif 30.0 <= fevi < 41.0: func_sist_txt = "Disfunción sistólica ventricular izquierda moderada."
-        else: func_sist_txt = "Disfunción sistólica ventricular izquierda severa."
-        vi["funcion_sistolica_evaluada"] = func_sist_txt
-        hallazgos_relevantes.append({"hallazgo": func_sist_txt, "evidencia": {"FEVI": fevi}})
-    else:
-        vi["funcion_sistolica_evaluada"] = None
+        if fevi < 52.0:
+            if 41.0 <= fevi < 52.0:
+                func_txt = f"disfunción sistólica ventricular izquierda leve (FEVI: {fevi}%)"
+                hallazgos_relevantes.append({"categoria": "ventriculo_izquierdo", "hallazgo": f"Disfunción sistólica leve (FEVI: {fevi}%)"})
+            elif 30.0 <= fevi < 41.0:
+                func_txt = f"disfunción sistólica ventricular izquierda moderada (FEVI: {fevi}%)"
+                hallazgos_relevantes.append({"categoria": "ventriculo_izquierdo", "hallazgo": f"Disfunción sistólica moderada (FEVI: {fevi}%)"})
+            else:
+                func_txt = f"disfunción sistólica ventricular izquierda severa (FEVI: {fevi}%)"
+                hallazgos_relevantes.append({"categoria": "ventriculo_izquierdo", "hallazgo": f"Disfunción sistólica severa (FEVI: {fevi}%)"})
+        else:
+            func_txt = f"función sistólica global conservada (FEVI: {fevi}%)"
 
-    dilatacion_detectada = False
-    if vtd is not None and vtd > 160.0: dilatacion_detectada = True
-    if dtdvi is not None and dtdvi > 58.0: dilatacion_detectada = True
+    dilatacion_vi = (dtdvi is not None and dtdvi > 58.0) or (vtd is not None and vtd > 160.0)
+    if dilatacion_vi:
+        alerta_dil = "Dilatación ventricular izquierda."
+        alertas.append(alerta_dil)
+        hallazgos_relevantes.append({"categoria": "ventriculo_izquierdo", "hallazgo": alerta_dil, "evidencia": {"DTDVI": dtdvi, "VTD": vtd}})
 
-    if dilatacion_detectada:
-        vi["alerta_dilatacion"] = "Se documenta dilatación ventricular izquierda."
-        hallazgos_relevantes.append({"hallazgo": "Dilatación ventricular izquierda", "evidencia": {"VTD": vtd, "DTDVI": dtdvi}})
-    else:
-        vi["alerta_dilatacion"] = None
+    if movilidad:
+        hallazgos_relevantes.append({"categoria": "motilidad", "hallazgo": f"Alteración segmentaria: {movilidad}"})
 
-    hemo = data.setdefault("hemodinamica_derecha", {})
+    # 2. Hemodinamia y PSAP
+    hemo = data.get("hemodinamica_derecha", {})
     psap = hemo.get("psap_calculada_mmhg") or (hemo.get("gradiente_it_pico_mmhg") + CLINICAL_CONFIG["PAD_INSTITUCIONAL"] if hemo.get("gradiente_it_pico_mmhg") is not None else None)
+    
+    hap_txt = None
     if psap is not None:
-        hap_txt = "Baja probabilidad de hipertensión pulmonar." if psap < CLINICAL_CONFIG["UMBRAL_HAP_BAJA"] else ("Probabilidad intermedia de hipertensión pulmonar." if psap <= CLINICAL_CONFIG["UMBRAL_HAP_INTERMEDIA"] else "Alta probabilidad de hipertensión pulmonar.")
-        hemo["probabilidad_hap"] = hap_txt
-        hallazgos_relevantes.append({"hallazgo": hap_txt, "evidencia": {"PSAP estimada": psap}})
+        if psap >= CLINICAL_CONFIG["UMBRAL_HAP_BAJA"]:
+            if psap <= CLINICAL_CONFIG["UMBRAL_HAP_INTERMEDIA"]:
+                hap_txt = f"presión sistólica de arteria pulmonar estimada en {psap} mmHg (probabilidad intermedia de hipertensión pulmonar)"
+                hallazgos_relevantes.append({"categoria": "hemodinamica", "hallazgo": "Probabilidad intermedia de hipertensión pulmonar", "PSAP": psap})
+            else:
+                hap_txt = f"presión sistólica de arteria pulmonar estimada en {psap} mmHg (alta probabilidad de hipertensión pulmonar)"
+                hallazgos_relevantes.append({"categoria": "hemodinamica", "hallazgo": "Alta probabilidad de hipertensión pulmonar", "PSAP": psap})
+        else:
+            hap_txt = f"PSAP estimada en {psap} mmHg"
 
-    conclusiones = [
-        f"Ventrículo izquierdo con dimensiones (DTDVI: {dtdvi} mm, VTD: {vtd} ml)." if (dtdvi or vtd) else "Ventrículo izquierdo sin datos reportados.",
-        f"Función sistólica global valorada con FEVI de {fevi}%." if fevi is not None else "Función sistólica no valorable.",
-        data.get("funcion_diastolica_bruta", {}).get("evaluacion_diastolica", "Función diastólica evaluada."),
-        hemo.get("probabilidad_hap", "Sin elementos hemodinámicos suficientes para estimar HAP."),
-        "Evaluación valvular detallada en informe estructurado.",
-        "Sin alteraciones segmentarias mayores consignadas.",
-        "Estudio evaluado mediante Motor Ross."
-    ]
-    data["conclusiones_deterministicas"] = conclusiones[:7]
-    data["hechos_clinicos"] = {"hallazgos_relevantes": hallazgos_relevantes, "limitaciones_del_estudio": list(set(limitaciones_del_estudio))}
-    return data
+    # 3. Derrama Pericárdico (Prioridad diagnóstica alta)
+    pc = data.get("pericardio_cava", {})
+    derrame = pc.get("derrame_pericardico")
+    if derrame:
+        hallazgos_relevantes.append({"categoria": "pericardio", "hallazgo": f"Derrame pericárdico {derrame}"})
 
+    # 4. Construcción de Descripción Ecocardiográfica (Fluida, Natural, Sin Repeticiones de "Ventriculo con...")
+    frases_desc = []
 
-# ====================================================================
-# REDACCIÓN OPTIMIZADA CON PAYLOAD REDUCIDO (PUNTO 3)
-# ====================================================================
-def fase_3_ia_redactora(client: genai.Client, api_key: str, data: dict) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    # Optimización: Enviar únicamente hechos clínicos y conclusiones deterministas para ahorrar tokens y latencia
-    payload_reducido = {
+    # Bloque VI
+    vi_fragmentos = []
+    if dtdvi or dtsvi: vi_fragmentos.append(f"dimensiones internas de {dtdvi} mm en telediástole y {dtsvi} mm en telesístole")
+    if siv or ppvi: vi_fragmentos.append(f"grosores parietales de SIV: {siv} mm y PPVI: {ppvi} mm")
+    if vtd: vi_fragmentos.append(f"volumen telediastólico de {vtd} ml")
+    
+    if vi_fragmentos or func_txt or movilidad:
+        base_vi = "Se observa ventrículo izquierdo con " + ", ".join(vi_fragmentos) if vi_fragmentos else "Ventrículo izquierdo"
+        if func_txt: base_vi += f", evidenciando {func_txt}"
+        if movilidad: base_vi += f". Se aprecia alteración de motilidad: {movilidad}"
+        frases_desc.append(base_vi + ".")
+
+    # Bloque Aurícula Izquierda
+    ai = data.get("auricula_izquierda", {})
+    ai_ap = ai.get("diametro_ap_mm")
+    ai_vol = ai.get("volumen_ml")
+    ai_index = ai.get("volumen_indexado_ml_m2")
+    if ai_ap or ai_vol or ai_index:
+        ai_parts = []
+        if ai_ap: ai_parts.append(f"diámetro anteroposterior de {ai_ap} mm")
+        if ai_vol: ai_parts.append(f"volumen de {ai_vol} ml")
+        if ai_index: ai_parts.append(f"volumen indexado de {ai_index} ml/m²")
+        
+        ai_str = f"La aurícula izquierda presenta {', '.join(ai_parts)}."
+        if ai_index is not None and ai_index > 34.0:
+            ai_str += " Se documenta dilatación auricular."
+            hallazgos_relevantes.append({"categoria": "auricula_izquierda", "hallazgo": f"Dilatación auricular izquierda (LAVI: {ai_index} ml/m²)"})
+        frases_desc.append(ai_str)
+
+    # Bloque Ventrículo y Aurícula Derecha
+    vd = data.get("ventriculo_derecho", {})
+    vd_basal = vd.get("diametro_basal_mm")
+    tapse = vd.get("tapse_mm")
+    onda_s = vd.get("onda_s_cm_s")
+    if vd_basal or tapse or onda_s:
+        vd_parts = []
+        if vd_basal: vd_parts.append(f"diámetro basal de {vd_basal} mm")
+        if tapse: vd_parts.append(f"TAPSE de {tapse} mm")
+        if onda_s: vd_parts.append(f"onda S' de {onda_s} cm/s")
+        
+        vd_str = f"Cavidades derechas con ventrículo que muestra {', '.join(vd_parts)}."
+        if tapse is not None and tapse < 16.0:
+            vd_str += " Se observa reducción de la excursión longitudinal sistólica."
+            hallazgos_relevantes.append({"categoria": "ventriculo_derecho", "hallazgo": f"Disfunción sistólica VD (TAPSE: {tapse} mm)"})
+        frases_desc.append(vd_str)
+
+    ad = data.get("auricula_derecha", {})
+    ad_area = ad.get("area_cm2")
+    if ad_area:
+        frases_desc.append(f"Aurícula derecha con área planimétrica de {ad_area} cm².")
+
+    # Bloque Valvular (Filtro de Insuficiencias Leves/Mínimas)
+    valv = data.get("valvulas", {})
+    valv_textos = []
+    for v_key, v_label in [
+        ("aortica_insuficiencia", "aórtica"), 
+        ("mitral_insuficiencia", "mitral"), 
+        ("tricuspide_insuficiencia", "tricuspídea"), 
+        ("pulmonar_insuficiencia", "pulmonar")
+    ]:
+        grado = valv.get(v_key)
+        if grado:
+            grado_lower = str(grado).lower()
+            # Criterio uniforme: Leves o mínimas solo en descripción; moderadas/severas a conclusiones y hallazgos
+            if any(term in grado_lower for term in ["moderada", "severa", "importante", "significativa", "grado"]):
+                hallazgos_relevantes.append({"categoria": "valvulas", "hallazgo": f"Insuficiencia {v_label} {grado}"})
+            valv_textos.append(f"insuficiencia {v_label} {grado}")
+
+    if valv.get("aortica_vmax_ms") or valv.get("aortica_grad_medio_mmhg"):
+        vmax = valv.get("aortica_vmax_ms")
+        gmed = valv.get("aortica_grad_medio_mmhg")
+        valv_textos.append(f"válvula aórtica con velocidad máxima de {vmax} m/s y gradiente medio de {gmed} mmHg")
+
+    if valv_textos:
+        frases_desc.append(f"A examen Doppler color y espectral se identifica: {', '.join(valv_textos)}.")
+
+    if hap_txt:
+        frases_desc.append(f"En la evaluación hemodinámica se registra {hap_txt}.")
+
+    cava_d = pc.get("cava_inferior_diametro_mm")
+    cava_col = pc.get("cava_colapso_porcentaje")
+    if cava_d is not None:
+        cava_str = f"Vena cava inferior con calibre de {cava_d} mm"
+        if cava_col is not None: cava_str += f" y colapsibilidad inspiratoria de {cava_col}%"
+        frases_desc.append(cava_str + ".")
+
+    if derrame:
+        frases_desc.append(f"Se documenta presencia de derrame pericárdico de características {derrame}.")
+
+    descripcion_corrida = " ".join(frases_desc)
+
+    # 5. Conclusiones Clínicas (EXCLUSIVAMENTE alteraciones y diagnósticos, Cero Mediciones Aisladas)
+    conclusiones = []
+    
+    if fevi is not None and fevi < 52.0:
+        conclusiones.append(f"Disfunción sistólica ventricular izquierda de grado {('leve' if fevi >= 41 else ('moderado' if fevi >= 30 else 'severo'))} (FEVI: {fevi}%).")
+    if dilatacion_vi:
+        conclusiones.append("Dilatación ventricular izquierda.")
+    if ai_index is not None and ai_index > 34.0:
+        conclusiones.append(f"Dilatación auricular izquierda significativa (LAVI: {ai_index} ml/m²).")
+    if tapse is not None and tapse < 16.0:
+        conclusiones.append(f"Disfunción sistólica del ventrículo derecho (TAPSE: {tapse} mm).")
+    if psap is not None and psap >= CLINICAL_CONFIG["UMBRAL_HAP_BAJA"]:
+        conclusiones.append(f"Elevación de la presión sistólica de la arteria pulmonar estimada en {psap} mmHg.")
+    if movilidad:
+        conclusiones.append(f"Trastorno de la motilidad parietal segmentaria: {movilidad}.")
+    
+    for vk, v_label in [("aortica_insuficiencia", "aórtica"), ("mitral_insuficiencia", "mitral"), ("tricuspide_insuficiencia", "tricuspídea")]:
+        grado = valv.get(vk)
+        if grado:
+            g_low = str(grado).lower()
+            if any(term in g_low for term in ["moderada", "severa", "importante", "significativa"]):
+                conclusiones.append(f"Insuficiencia {v_label} {grado}.")
+
+    if derrame:
+        conclusiones.append(f"Derrame pericárdico: {derrame}.")
+
+    conclusiones = conclusiones[:7]
+    if not conclusiones:
+        conclusiones.append("Estudio ecocardiográfico sin alteraciones estructurales o funcionales mayores consignadas.")
+
+    # 6. Diagnóstico Final (Impresión Clínica Integrada, No Lista de Variables)
+    diag_componentes = []
+    if fevi is not None:
+        if fevi < 52.0:
+            diag_componentes.append(f"disfunción sistólica ventricular izquierda ({fevi}%)")
+        else:
+            diag_componentes.append("función sistólica global conservada")
+    
+    if dilatacion_vi: diag_componentes.append("con remodelado/dilatación ventricular izquierda")
+    if ai_index is not None and ai_index > 34.0: diag_componentes.append("dilatación auricular izquierda")
+    if movilidad: diag_componentes.append(f"trastorno de motilidad ({movilidad})")
+    
+    valv_significativas = [f"insuficiencia {v_label} {valv.get(vk)}" for vk, v_label in [("aortica_insuficiencia", "aórtica"), ("mitral_insuficiencia", "mitral"), ("tricuspide_insuficiencia", "tricuspídea")] if valv.get(vk) and any(t in str(valv.get(vk)).lower() for t in ["moderada", "severa", "importante"])]
+    if valv_significativas:
+        diag_componentes.append("valvulopatía significativa tipo " + " y ".join(valv_significativas))
+
+    if psap is not None and psap >= CLINICAL_CONFIG["UMBRAL_HAP_BAJA"]:
+        diag_componentes.append(f"estimación de PSAP elevada ({psap} mmHg)")
+
+    if derrame:
+        diag_componentes.append(f" derrame pericárdico ({derrame})")
+
+    if diag_componentes:
+        # Construcción sintáctica de impresión médica real
+        diagnostico_final = "Impresión diagnóstica: Ecocardiograma transtorácico que demuestra " + ", ".join(diag_componentes) + "."
+    else:
+        diagnostico_final = "Impresión diagnóstica: Ecocardiograma transtorácico sin alteraciones patológicas relevantes evaluadas."
+
+    # 7. JSON Maestro v10.0 con Trazabilidad Completa
+    json_maestro = {
         "paciente": data.get("paciente", {}),
-        "hechos_clinicos": data.get("hechos_clinicos", {}),
-        "conclusiones_deterministicas": data.get("conclusiones_deterministicas", [])
+        "variables_ecocardiograficas": {
+            "ventriculo_izquierdo": vi,
+            "auricula_izquierda": ai,
+            "ventriculo_derecho": vd,
+            "auricula_derecha": data.get("auricula_derecha", {}),
+            "hemodinamica_derecha": hemo,
+            "funcion_diastolica_bruta": data.get("funcion_diastolica_bruta", {}),
+            "valvulas": valv,
+            "pericardio_cava": pc
+        },
+        "hechos_clinicos": {
+            "hallazgos_relevantes": hallazgos_relevantes
+        },
+        "alertas_automaticas": alertas,
+        "recall_clinico": recall_res,
+        "descripcion_ecocardiografica": descripcion_corrida,
+        "conclusiones": conclusiones,
+        "diagnostico": diagnostico_final,
+        "metadatos": {
+            "fecha_procesamiento": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "archivo_fuente": archivo_nombre,
+            "tiempo_total_segundos": tiempo_total,
+            "version_motor": "CardioAgente Extractor Maestro v10.0 (Clínico Fino)"
+        }
     }
 
-    response, telemetria = llamada_segura_gemini(
-        client=client,
-        model_name="gemini-3.8-flash",
-        contents=[PROMPT_FASE_3_REDACCION, json.dumps(payload_reducido, ensure_ascii=False)],
-        config_gen=types.GenerateContentConfig(temperature=0.1)
-    )
-    texto_resp = re.sub(r"^```json\s*", "", response.text.strip())
-    texto_resp = re.sub(r"^```\s*", "", texto_resp)
-    texto_resp = re.sub(r"\s*```$", "", texto_resp)
-    
-    valido, mensaje, parsed = validar_json_redaccion(texto_resp)
-    if not valido:
-        raise ValueError(f"Fallo en validación de Redacción: {mensaje}")
-    return parsed, telemetria
-
-
-def fase_3_5_auditor_clinico(client: genai.Client, api_key: str, data: dict, resultado_fase_3: dict) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    response, telemetria = llamada_segura_gemini(
-        client=client,
-        model_name="gemini-3.8-flash",
-        contents=["Eres auditor clínico. Verifica consistencia y responde 'APROBADO' o 'OBSERVACIONES' con texto plano.", json.dumps(resultado_fase_3, ensure_ascii=False)],
-        config_gen=types.GenerateContentConfig(temperature=0.0)
-    )
-    valido, texto_auditor = validar_respuesta_auditor(response.text)
-    aprobado = "APROBADO" in texto_auditor.upper()
-    return {"aprobado": aprobado, "comentario": texto_auditor}, telemetria
-
-
-def generar_pdf_reportlab(data: dict, narrativa: str, conclusiones: List[str], diagnostico: str) -> bytes:
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
-    story = []
-    styles = getSampleStyleSheet()
-    estilo = ParagraphStyle("Cuerpo", parent=styles["Normal"], fontName="Helvetica", fontSize=9.5, leading=12, textColor=colors.HexColor("#2D3748"))
-    
-    story.append(Paragraph("<b>DR. DIEGO ROSS ÁLVAREZ - CARDIOLOGÍA</b>", estilo))
-    story.append(Spacer(1, 10))
-    pac = data.get("paciente", {})
-    story.append(Paragraph(escape(f"Paciente: {pac.get('nombre', '')} | Edad: {pac.get('edad', 'N/D')}"), estilo))
-    story.append(Spacer(1, 10))
-    
-    for c in conclusiones:
-        if c.strip():
-            story.append(Paragraph(escape(c), estilo))
-            story.append(Spacer(1, 4))
-            
-    doc.build(story)
-    buffer.seek(0)
-    return buffer.getvalue()
+    return json_maestro
 
 
 # ====================================================================
-# APLICACIÓN STREAMLIT CON RANKING DE CUELLOS DE BOTELLA (PUNTO 5 Y 8)
+# INTERFAZ STREAMLIT - APLICACIÓN 1 (V10.0)
 # ====================================================================
-if "reporte_hibrido" not in st.session_state:
-    st.session_state["reporte_hibrido"] = None
-    st.session_state["narrativa_clinica"] = ""
-    st.session_state["conclusiones_clinicas"] = [""] * 7
-    st.session_state["diagnostico_clinico"] = ""
-
-historial_lote = cargar_historial_disco()
-
 col1, col2 = st.columns([1, 1], gap="medium")
 
 with col1:
-    st.markdown("#### 📂 1. Ingesta de Estudio (PDF)")
+    st.markdown("#### 📂 Ingesta de Estudio Ecocardiográfico (PDF)")
     uploaded_file = st.file_uploader("Cargar reporte del ecógrafo", type=["pdf"])
 
 if uploaded_file is not None:
@@ -622,159 +645,103 @@ if uploaded_file is not None:
 
     if not api_key:
         with col2:
-            st.warning("⚠️ Ingrese su API Key en el panel lateral.")
+            st.warning("⚠️ Ingrese su API Key de Gemini en el panel lateral.")
     else:
         with col1:
-            if st.button("🚀 Ejecutar Auditoría v7.9 (Optimizado)", use_container_width=True):
+            if st.button("🚀 Ejecutar Extracción y Cerebro Clínico v10.0", use_container_width=True):
                 status_placeholder = st.empty()
-                log_detallado = []
                 
                 try:
                     t_inicio_total = time.time()
 
-                    # FASE 1: OCR
-                    status_placeholder.info("🔄 Fase actual: **OCR** (Extrayendo texto del PDF...)")
-                    t0 = time.time()
+                    # 1. OCR
+                    status_placeholder.info("🔄 Procesando OCR adaptativo del PDF...")
                     file_bytes = uploaded_file.read()
-                    datos_crudos_ocr, reporte_ocr = extraer_pdf_adaptativo(file_bytes)
-                    t_ocr = round(time.time() - t0, 3)
-                    log_detallado.append({"fase": "OCR", "duracion": t_ocr, "estado": "OK"})
+                    texto_ocr, reporte_ocr = extraer_pdf_adaptativo(file_bytes)
 
+                    # 2. Llamada única a Gemini
+                    status_placeholder.info("🔄 Extrayendo datos estructurados con Gemini (1 sola llamada)...")
                     client = genai.Client(api_key=api_key)
                     config_gen = types.GenerateContentConfig(temperature=0.0)
-
-                    # FASE 2: Extracción Gemini
-                    status_placeholder.info("🔄 Fase actual: **Extracción** (Procesando con Gemini 3.8 Flash...)")
-                    prompt_ext = f"{PROMPT_FASE_1_EXTRACCION}\nDATOS CRUDOS DEL INFORMANTE:\n{datos_crudos_ocr}"
+                    prompt_ext = f"{PROMPT_EXTRACCION}\nDATOS CRUDOS DEL INFORMANTE:\n{texto_ocr}"
                     
-                    response_f1, tel_ext = llamada_segura_gemini(
+                    response, dur_ext = llamada_segura_gemini(
                         client=client,
                         model_name="gemini-3.8-flash",
                         contents=[prompt_ext],
-                        config_gen=config_gen,
-                        timeout_segundos=25
+                        config_gen=config_gen
                     )
                     
-                    texto_resp = re.sub(r"^```json\s*", "", response_f1.text.strip())
+                    texto_resp = re.sub(r"^```json\s*", "", response.text.strip())
                     texto_resp = re.sub(r"^```\s*", "", texto_resp)
                     texto_resp = re.sub(r"\s*```$", "", texto_resp)
 
-                    valido_ext, msg_ext, json_crudo = validar_json_extraccion(texto_resp)
-                    if not valido_ext:
-                        raise ValueError(f"Fallo de validación en Extracción: {msg_ext}")
+                    valido, msg, json_crudo = validar_json_extraccion(texto_resp)
+                    if not valido:
+                        raise ValueError(f"Fallo de validación en Extracción: {msg}")
+
+                    # 3. Normalización y Síntesis Fina v10.0
+                    status_placeholder.info("🔄 Ejecutando normalización y síntesis clínica fluida...")
+                    json_normalizado = normalizar_datos(json_crudo)
+                    recall_res = calcular_recall_clinico(json_normalizado, texto_ocr)
                     
-                    log_detallado.append({"fase": "Extracción", "duracion": tel_ext["duracion_s"], "estado": "OK", "telemetria": tel_ext})
-
-                    # FASE 3: Normalización
-                    status_placeholder.info("🔄 Fase actual: **Normalización** (Sanitizando y convirtiendo datos...)")
-                    t0 = time.time()
-                    json_normalizado = fase_1_5_normalizacion(json_crudo)
-                    recall_res = calcular_recall_clinico(json_normalizado, datos_crudos_ocr)
-                    t_norm = round(time.time() - t0, 3)
-                    log_detallado.append({"fase": "Normalización", "duracion": t_norm, "estado": "OK"})
-
-                    # FASE 4: Motor Ross
-                    status_placeholder.info("🔄 Fase actual: **Motor Ross** (Ejecutando lógica determinista...)")
-                    t0 = time.time()
-                    json_procesado = fase_2_motor_ross_determinista(json_normalizado)
-                    st.session_state["reporte_hibrido"] = json_procesado
-                    t_ross = round(time.time() - t0, 3)
-                    log_detallado.append({"fase": "Motor Ross", "duracion": t_ross, "estado": "OK"})
-
-                    # FASE 5: Redacción
-                    status_placeholder.info("🔄 Fase actual: **Redacción** (Generando informe formal optimizado...)")
-                    resultado_redaccion, tel_red = fase_3_ia_redactora(client, api_key, json_procesado)
-                    log_detallado.append({"fase": "Redacción", "duracion": tel_red["duracion_s"], "estado": "OK", "telemetria": tel_red})
-
-                    # FASE 6: Auditoría
-                    status_placeholder.info("🔄 Fase actual: **Auditoría** (Verificando consistencia clínica...)")
-                    resultado_auditoria, tel_aud = fase_3_5_auditor_clinico(client, api_key, json_procesado, resultado_redaccion)
-                    log_detallado.append({"fase": "Auditoría", "duracion": tel_aud["duracion_s"], "estado": "OK", "telemetria": tel_aud})
-
-                    st.session_state["narrativa_clinica"] = resultado_redaccion.get("narrativa_descriptiva", "")
-                    st.session_state["conclusiones_clinicas"] = resultado_redaccion.get("conclusiones_redactadas", json_procesado.get("conclusiones_deterministicas"))
-                    st.session_state["diagnostico_clinico"] = resultado_redaccion.get("diagnostico_redactado", "")
-
                     tiempo_total = round(time.time() - t_inicio_total, 3)
 
-                    # Cálculo de porcentajes por fase (Punto 8)
-                    for item in log_detallado:
-                        item["pct_total"] = round((item["duracion"] / tiempo_total) * 100, 1) if tiempo_total > 0 else 0.0
+                    json_maestro_final = motor_ross_y_sintesis_estricta_v10(
+                        json_normalizado, 
+                        recall_res, 
+                        tiempo_total, 
+                        uploaded_file.name
+                    )
 
-                    fase_mas_lenta_obj = max(log_detallado, key=lambda x: x["duracion"])
+                    st.session_state["json_maestro"] = json_maestro_final
 
-                    log_estudio = {
+                    historial = cargar_historial_disco()
+                    historial.append({
                         "fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "archivo": uploaded_file.name,
                         "recall_pct": recall_res["recall_clinico_pct"],
-                        "tiempo_total": tiempo_total,
-                        "fase_mas_lenta": fase_mas_lenta_obj["fase"],
-                        "pct_mas_lenta": fase_mas_lenta_obj["pct_total"],
-                        "recall_res": recall_res,
-                        "reporte_ocr": reporte_ocr,
-                        "log_detallado": log_detallado
-                    }
-                    
-                    historial_lote.append(log_estudio)
-                    guardar_historial_disco(historial_lote)
-                    st.session_state["ultimo_estudio"] = log_estudio
+                        "tiempo_total": tiempo_total
+                    })
+                    guardar_historial_disco(historial)
 
-                    status_placeholder.success(f"¡Auditoría v7.9 completada con éxito en {tiempo_total}s (Recall Clínico: {recall_res['recall_clinico_pct']}%)!")
+                    status_placeholder.success(f"✅ JSON Maestro v10.0 generado con éxito en {tiempo_total}s (Recall Clínico: {recall_res['recall_clinico_pct']}%)")
+
                 except Exception as e:
-                    status_placeholder.error(f"❌ Error crítico en ejecución:")
-                    st.error(f"Detalle del fallo: {str(e)}")
+                    status_placeholder.error(f"❌ Error crítico en el Extractor: {str(e)}")
 
 # ====================================================================
-# CONSOLA DE AUDITORÍA Y RANKING DE CUELLOS DE BOTELLA
+# VISUALIZACIÓN Y DESCARGA DEL JSON MAESTRO V10.0
 # ====================================================================
-if st.session_state["reporte_hibrido"]:
+if "json_maestro" in st.session_state:
     st.markdown("---")
+    st.markdown("### 📊 Inspección del JSON Maestro v10.0 (Cerebro Clínico Fino)")
     
-    with st.expander("🛠️ CONSOLA DE LATENCIA Y CUELLOS DE BOTELLA v7.9", expanded=True):
-        ultimo = st.session_state.get("ultimo_estudio", {})
-        recall_d = ultimo.get("recall_res", {})
-        ocr_d = ultimo.get("reporte_ocr", {})
-        traza = ultimo.get("log_detallado", [])
+    maestro = st.session_state["json_maestro"]
+    recall = maestro.get("recall_clinico", {})
+    
+    c1, c2, c3 = st.columns(3)
+    with c1: st.metric("Recall Clínico", f"{recall.get('recall_clinico_pct', 0)}%")
+    with c2: st.metric("Variables Detectadas", f"{recall.get('variables_en_ocr', 0)}")
+    with c3: st.metric("Variables Recuperadas", f"{recall.get('variables_recuperadas', 0)}")
 
-        st.markdown("### 🎯 Métricas de Rendimiento y Fase Dominante")
-        c1, c2, c3 = st.columns(3)
-        with c1: st.metric("Tiempo Total", f"{ultimo.get('tiempo_total', 0)} s")
-        with c2: st.metric("Fase Más Lenta", f"{ultimo.get('fase_mas_lenta', 'N/D')}")
-        with c3: st.metric("Impacto Temporal", f"{ultimo.get('pct_mas_lenta', 0)}% del total")
+    st.markdown("#### 📝 Vista Previa del Contenido Clínico de Alta Fidelidad")
+    st.info(f"**Diagnóstico Final:** {maestro.get('diagnostico')}")
+    st.write(f"**Descripción Ecocardiográfica:** {maestro.get('descripcion_ecocardiografica')}")
+    
+    st.write("**Conclusiones Clínicas:**")
+    for idx, c in enumerate(maestro.get("conclusiones", []), 1):
+        st.markdown(f"*{idx}.* {c}")
 
-        if ocr_d.get("alertas_ocr"):
-            for alt in ocr_d["alertas_ocr"]:
-                st.warning(alt)
-
-        if traza:
-            st.markdown("---")
-            st.markdown("### ⏱️ Ranking de Tiempo Consumido por Fase")
-            st.table(traza)
-
-        st.markdown("---")
-        st.markdown("### 📊 Historial Acumulado en Disco (Lote Real)")
-        historial_actual = cargar_historial_disco()
-        if historial_actual:
-            prom_rec = round(sum(h["recall_pct"] for h in historial_actual) / len(historial_actual), 1)
-            prom_t = round(sum(h["tiempo_total"] for h in historial_actual) / len(historial_actual), 2)
-            st.write(f"- **Estudios Totales Registrados en Lote:** `{len(historial_actual)}`")
-            st.write(f"- **Promedio de Recall Clínico Histórico:** `{prom_rec}%`")
-            st.write(f"- **Promedio de Tiempo Total de Procesamiento:** `{prom_t} s`")
-
-    st.markdown("#### ✏️ 2. Panel de Validación Médica v7.9")
-    data = st.session_state["reporte_hibrido"]
-
-    with st.container():
-        pac = data.setdefault("paciente", {})
-        c1, c2 = st.columns(2)
-        with c1: pac["nombre"] = st.text_input("Nombre del Paciente", value=pac.get("nombre") or "")
-        with c2: 
-            edad_txt = st.text_input("Edad", value=str(pac.get("edad") if pac.get("edad") is not None else ""))
-            pac["edad"] = int(sanitizar_y_convertir_numero(edad_txt)) if sanitizar_y_convertir_numero(edad_txt) is not None else None
-
-        st.markdown("##### 📝 Narrativa Clínica")
-        st.session_state["narrativa_clinica"] = st.text_area("Narrativa:", value=st.session_state["narrativa_clinica"], height=120)
-
-    st.markdown("---")
-    if st.button("📥 Generar PDF Institucional v7.9", type="primary", use_container_width=True):
-        pdf_bytes = generar_pdf_reportlab(data, st.session_state["narrativa_clinica"], st.session_state["conclusiones_clinicas"], "Ecocardiograma valorado.")
-        st.download_button("💾 Descargar PDF", data=pdf_bytes, file_name="Reporte_Ecocardiograma_v7.9.pdf", mime="application/pdf", use_container_width=True)
+    st.markdown("#### 📦 JSON Maestro v10.0 Completo")
+    json_str = json.dumps(maestro, ensure_ascii=False, indent=2)
+    
+    st.code(json_str, language="json")
+    
+    st.download_button(
+        label="💾 Descargar JSON Maestro v10.0",
+        data=json_str,
+        file_name=f"json_maestro_v10_{maestro.get('paciente', {}).get('nombre', 'paciente').replace(' ', '_')}.json",
+        mime="application/json",
+        use_container_width=True
+    )
